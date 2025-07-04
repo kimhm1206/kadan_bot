@@ -2,19 +2,24 @@ import discord
 import aiohttp
 import psycopg2
 from datetime import datetime, timedelta
+import platform
 
-# 운영 서버 및 역할 ID
-OPERATING_GUILD_ID = 743375510003777618
-EXCHANGE_ROLE_ID = 864114840876482581
+# 운영체제 확인
+if platform.system() == "Windows":
+    host = "3.37.78.228"  # 외부 접속용
+else:
+    host = "localhost"    # 리눅스 내부 접속용
 
-# PostgreSQL 연결 정보
 DB_CONFIG = {
-    "host": "localhost",
+    "host": host,
     "port": 5432,
     "dbname": "kadanbot",
     "user": "kadan",
     "password": "wndnwkdkr8"
 }
+# 운영 서버 및 역할 ID
+OPERATING_GUILD_ID = 743375510003777618
+EXCHANGE_ROLE_ID = 864114840876482581
 
 def get_conn():
     return psycopg2.connect(**DB_CONFIG)

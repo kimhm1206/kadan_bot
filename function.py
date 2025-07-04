@@ -325,7 +325,8 @@ async def send_log_embed(
         inline=False
     )
     embed.add_field(name="계정", value=main_nick, inline=False)
-
-    log_channel = bot.get_channel(1390746857021505586)
-    if log_channel:
-        await log_channel.send(embed=embed)
+    guild = bot.get_guild(OPERATING_GUILD_ID)
+    if guild:
+        log_channel = bot.get_channel(1390746857021505586)
+        if log_channel:
+            await log_channel.send(embed=embed)

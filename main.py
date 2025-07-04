@@ -4,7 +4,7 @@ from mainview import VerificationView
 from command import setup as setup_commands
 
 # 인증 채널 ID
-VERIFICATION_CHANNEL_ID = 1389325202714001589
+VERIFICATION_CHANNEL_ID = 1381206205267185704
 
 # 인텐트 설정
 intents = discord.Intents.default()

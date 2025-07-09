@@ -1,5 +1,5 @@
 import discord
-from function import insert_sub_account,update_foreign_request_status, get_server_main_nick, get_user_sub_count, get_max_subs, send_log_embed
+from function import insert_sub_account,update_foreign_request_status, get_server_main_nick, get_user_sub_count, get_max_subs, send_log_embed,add_sub_role
 
 OPERATING_GUILD_ID = 743375510003777618  # 상단 import 영역에 위치
 
@@ -44,6 +44,9 @@ class ApprovalView(discord.ui.View):
         success = insert_sub_account(self.requester_id, main_nick, self.sub_nick, sub_num)
 
         if success:
+            
+            await add_sub_role(interaction.client , self.requester_id)
+            
             await interaction.response.edit_message(
                     embed=discord.Embed(
                     title="✅ 요청을 승인했습니다.",

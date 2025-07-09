@@ -20,6 +20,7 @@ DB_CONFIG = {
 # 운영 서버 및 역할 ID
 OPERATING_GUILD_ID = 743375510003777618
 EXCHANGE_ROLE_ID = 864114840876482581
+AUTH_ROLE_ID = 1381202594822750208
 
 def get_conn():
     return psycopg2.connect(**DB_CONFIG)
@@ -119,6 +120,22 @@ def insert_sub_account(discord_id: int, main_nick: str, sub_nick: str, sub_num: 
         return False
     finally:
         conn.close()
+        
+async def add_sub_role(bot: discord.Bot, discord_id: int):
+    
+    guild = bot.get_guild(OPERATING_GUILD_ID)
+    member = guild.get_member(discord_id)
+    role = guild.get_role(AUTH_ROLE_ID)
+    
+    if role is None or role in member.roles:
+        return
+
+    try:
+        await member.add_roles(role, reason="부계정 등록으로 인한 인증 역할 자동 부여")
+    except discord.Forbidden:
+        pass
+    except Exception:
+        pass
 
 
 def get_server_main_nick(bot: discord.Bot, discord_id: int) -> str | None:

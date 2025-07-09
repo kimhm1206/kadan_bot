@@ -37,6 +37,12 @@ class SubAccountCancelView(discord.ui.View):
                     try:
                         new_nick = current_nick.replace(" / 부계정O", "").strip()
                         await member.edit(nick=new_nick, reason="부계정 전부 삭제로 인한 닉네임 복구")
+                        
+                        auth_role = guild.get_role(1381202594822750208)
+                        
+                        if auth_role in member.roles:
+                            await member.remove_roles(auth_role, reason="부계정 전부 삭제로 인한 역할 제거")
+                            
                         await send_log_embed(
                                 bot=interaction.client,
                                 user=member,

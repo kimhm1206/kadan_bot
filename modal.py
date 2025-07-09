@@ -2,7 +2,7 @@ import discord
 import aiohttp
 import re
 import random
-from function import insert_sub_account, get_user_sub_count, get_max_subs,is_sub_nick_taken, get_setting, get_all_sub_nicks,save_foreign_sub_request,send_log_embed
+from function import insert_sub_account, get_user_sub_count, get_max_subs,is_sub_nick_taken, get_setting, get_all_sub_nicks,save_foreign_sub_request,send_log_embed,add_sub_role
 from dmsendview import ApprovalView
 
 OPERATING_GUILD_ID = 743375510003777618
@@ -241,6 +241,8 @@ class ConfirmAuthView(discord.ui.View):
 
         if success:
             # ✅ 닉네임 강제 변경
+            await add_sub_role(interaction.client , discord_id)
+            
             member = interaction.guild.get_member(discord_id)
             current_nick = member.nick or member.global_name
 

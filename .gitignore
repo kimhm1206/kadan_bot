@@ -7,6 +7,8 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+local_test.db
+.env
 .Python
 build/
 develop-eggs/

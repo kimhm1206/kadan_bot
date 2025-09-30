@@ -3,8 +3,11 @@ from utils.function import (
     get_sub_accounts_membernos,
     fetch_character_list,
     fetch_character_list_by_nickname,
-    get_sub_accounts
+    get_sub_accounts,
+    delete_main_account,
+    get_setting_cached,
 )
+from auth.auth_logger import send_main_delete_log
 import discord, re
 
 def setup(bot: discord.Bot):
@@ -74,3 +77,47 @@ def setup(bot: discord.Bot):
             f"❌ `{nickname}` 은(는) 해당 유저의 계정에 등록되어 있지 않습니다.\n한 번 더 확인해주세요.",
             ephemeral=True
         )
+
+    @bot.slash_command(
+        name="인증해제",
+        description="대상 멤버의 인증 정보를 강제로 삭제합니다.",
+        default_member_permissions=discord.Permissions(administrator=True),
+    )
+    async def force_unverify(
+        ctx: discord.ApplicationContext,
+        member: discord.Option(discord.Member, description="인증을 해제할 멤버"),  # type: ignore
+    ):
+        await ctx.defer(ephemeral=True)
+
+        main_nick, sub_list = delete_main_account(ctx.guild_id, member.id)
+        if not main_nick and not sub_list:
+            await ctx.followup.send("⚠️ 인증 내역을 찾을 수 없습니다.", ephemeral=True)
+            return
+
+        for key in ("main_auth_role", "sub_auth_role"):
+            role_id = get_setting_cached(ctx.guild_id, key)
+            if role_id:
+                role = ctx.guild.get_role(int(role_id))
+                if role:
+                    try:
+                        await member.remove_roles(role)
+                    except discord.Forbidden:
+                        pass
+
+        try:
+            await member.edit(nick=None)
+        except discord.Forbidden:
+            pass
+
+        await send_main_delete_log(ctx.bot, ctx.guild_id, member, main_nick, sub_list)
+
+        lines = ["✅ 인증 정보를 강제로 삭제했습니다."]
+        if main_nick:
+            lines.append(f"- 본계정 `{main_nick}` 삭제")
+        if sub_list:
+            sub_summary = ", ".join(
+                f"#{sub_num} `{nick or '닉네임 없음'}`" for sub_num, nick in sub_list
+            )
+            lines.append(f"- 부계정 삭제: {sub_summary}")
+
+        await ctx.followup.send("\n".join(lines), ephemeral=True)

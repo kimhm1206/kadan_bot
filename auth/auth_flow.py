@@ -179,7 +179,15 @@ async def verify_conditions(auth_type, guild_id, discord_id, member_no, characte
     # 3️⃣ 차단 검사 (공통)
     blocked = get_user_blocked(guild_id, discord_id, member_no, nickname_list)
     if blocked:
-        return False, ("blocked", blocked)
+        return False, (
+            "blocked",
+            {
+                "details": blocked,
+                "discord_id": discord_id,
+                "member_no": member_no,
+                "nicknames": nickname_list,
+            },
+        )
 
     return True, ("ok", "검증 통과")
 
@@ -196,9 +204,11 @@ def format_fail_message(reason: str, details) -> str:
         return f"⚠️ 아이템 레벨 조건을 충족하지 못했습니다.\n최소 요구 레벨: {details}"
 
     elif reason == "blocked":
+        blocked_details = details.get("details") if isinstance(details, dict) else details
+        blocked_details = blocked_details or []
         reason_list = [
             f"[서버:{b['guild_id']}] {b['data_type']}={b['value']} (사유:{b['reason']})"
-            for b in details
+            for b in blocked_details
         ]
         return "🚫 차단된 사용자입니다.\n" + "\n".join(reason_list) + "\n관리자에게 문의해주세요."
 

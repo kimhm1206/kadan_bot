@@ -1,4 +1,7 @@
+import asyncio
+
 import discord
+
 from ticket.ticket_create import create_ticket, ICON_MAP
 
 
@@ -42,7 +45,16 @@ class TicketConfirmView(discord.ui.View):
             color=discord.Color.red(),
         )
 
-        await interaction.response.edit_message(embed=embed, view=None, delete_after=10)
+        await interaction.response.edit_message(embed=embed, view=None)
+
+        async def _cleanup():
+            await asyncio.sleep(10)
+            try:
+                await interaction.delete_original_response()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+        asyncio.create_task(_cleanup())
 
 class TicketPanelView(discord.ui.View):
     def __init__(self):

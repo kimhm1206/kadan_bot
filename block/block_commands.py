@@ -1,19 +1,22 @@
 import asyncio
+from datetime import datetime
+from typing import Optional
+
 import discord
+
+from auth.auth_logger import send_main_delete_log
 from utils.function import (
     block_user,
-    get_setting_cached,
     delete_main_account,
     fetch_character_list_by_nickname,
+    get_setting_cached,
 )
-from auth.auth_logger import send_main_delete_log
-from datetime import datetime
 
 
-async def purge_user_messages(guild: discord.Guild, target_id: int) -> tuple[int, int]:
+async def purge_user_messages(guild: Optional[discord.Guild], target_id: int) -> tuple[int, int]:
     """길드 전체 텍스트 채널에서 대상자의 메시지를 삭제하고 (채널 수, 메시지 수)를 반환"""
 
-    if not guild.me or not target_id:
+    if not guild or not guild.me or not target_id:
         return 0, 0
 
     touched_channels = 0
@@ -58,10 +61,20 @@ def setup(bot: discord.Bot):
         reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)")  # type: ignore
     ):
         await ctx.defer(ephemeral=True)
-        discord_id = int(user_id)
+        guild = ctx.guild
+        if not guild:
+            await ctx.followup.send("⚠️ 길드에서만 사용할 수 있는 명령입니다.", ephemeral=True)
+            return
+
+        try:
+            discord_id = int(user_id)
+        except ValueError:
+            await ctx.followup.send("❌ 유효한 디스코드 ID를 입력해 주세요.", ephemeral=True)
+            return
+
         new_blocks, already_blocked = block_user(ctx.guild_id, discord_id, reason, ctx.user.id)
 
-        msg = []
+        msg = [f"🚫 <@{discord_id}> 처리 결과:"]
         if new_blocks:
             msg.append("✅ 새로 차단된 정보:")
             for dtype, val in new_blocks:
@@ -73,7 +86,7 @@ def setup(bot: discord.Bot):
 
         if new_blocks:
             # 🔹 멤버 객체 확인
-            member = ctx.guild.get_member(discord_id)
+            member = guild.get_member(discord_id)
 
             # 🔹 인증정보 삭제 (DB 이관)
             main_nick, sub_list = delete_main_account(ctx.guild_id, discord_id)
@@ -85,7 +98,7 @@ def setup(bot: discord.Bot):
                 for key in ("main_auth_role", "sub_auth_role"):
                     role_id = get_setting_cached(ctx.guild_id, key)
                     if role_id:
-                        role = ctx.guild.get_role(int(role_id))
+                        role = guild.get_role(int(role_id))
                         if role:
                             try:
                                 await member.remove_roles(role)
@@ -97,7 +110,7 @@ def setup(bot: discord.Bot):
                 except discord.Forbidden:
                     pass
 
-                cleaned_channels, cleaned_messages = await purge_user_messages(ctx.guild, member.id)
+                cleaned_channels, cleaned_messages = await purge_user_messages(guild, member.id)
 
                 try:
                     await member.kick(reason=f"차단 조치: {reason}")
@@ -149,6 +162,11 @@ def setup(bot: discord.Bot):
         reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)") # type: ignore
     ):
         await ctx.defer(ephemeral=True)
+        guild = ctx.guild
+        if not guild:
+            await ctx.followup.send("⚠️ 길드에서만 사용할 수 있는 명령입니다.", ephemeral=True)
+            return
+
         new_blocks, already_blocked = block_user(ctx.guild_id, member, reason, ctx.user.id)
 
         msg = [f"🚫 {member.mention} 처리 결과:"]
@@ -170,7 +188,7 @@ def setup(bot: discord.Bot):
             for key in ("main_auth_role", "sub_auth_role"):
                 role_id = get_setting_cached(ctx.guild_id, key)
                 if role_id:
-                    role = ctx.guild.get_role(int(role_id))
+                    role = guild.get_role(int(role_id))
                     if role:
                         try:
                             await member.remove_roles(role)
@@ -183,7 +201,7 @@ def setup(bot: discord.Bot):
             except discord.Forbidden:
                 pass
 
-            cleaned_channels, cleaned_messages = await purge_user_messages(ctx.guild, member.id)
+            cleaned_channels, cleaned_messages = await purge_user_messages(guild, member.id)
 
             try:
                 await member.kick(reason=f"차단 조치: {reason}")
@@ -312,6 +330,10 @@ async def broadcast_block_log(
         reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)")
     ):
         await ctx.defer(ephemeral=True)
+        guild = ctx.guild
+        if not guild:
+            await ctx.followup.send("⚠️ 길드에서만 사용할 수 있는 명령입니다.", ephemeral=True)
+            return
 
         characters = await fetch_character_list_by_nickname(nickname)
         if not characters:
@@ -350,7 +372,7 @@ async def broadcast_block_log(
                     continue
 
         for user_id in processed_users:
-            member = ctx.guild.get_member(user_id)
+            member = guild.get_member(user_id)
             main_nick, sub_list = delete_main_account(ctx.guild_id, user_id)
             kick_success = False
 
@@ -358,7 +380,7 @@ async def broadcast_block_log(
                 for key in ("main_auth_role", "sub_auth_role"):
                     role_id = get_setting_cached(ctx.guild_id, key)
                     if role_id:
-                        role = ctx.guild.get_role(int(role_id))
+                        role = guild.get_role(int(role_id))
                         if role:
                             try:
                                 await member.remove_roles(role)
@@ -369,7 +391,7 @@ async def broadcast_block_log(
                 except discord.Forbidden:
                     pass
 
-                cleaned_channels, cleaned_messages = await purge_user_messages(ctx.guild, member.id)
+                cleaned_channels, cleaned_messages = await purge_user_messages(guild, member.id)
 
                 try:
                     await member.kick(reason=f"차단 조치: {reason}")
@@ -399,16 +421,38 @@ async def broadcast_block_log(
             msg.extend(cleaned_report)
 
         if new_blocks:
-            first_user_id = next(iter(processed_users), None)
-            member_obj = ctx.guild.get_member(first_user_id) if first_user_id else None
-            await broadcast_block_log(
-                bot,
-                blocked_gid=ctx.guild_id,
-                target_user=member_obj,
-                raw_user_id=first_user_id,
-                new_blocks=new_blocks,
-                reason=reason,
-                blocked_by=ctx.user.id,
-            )
+            if processed_users:
+                for discord_id in processed_users:
+                    target_member = guild.get_member(discord_id)
+                    filtered_blocks = []
+                    for item in new_blocks:
+                        dtype, value = item
+                        if dtype != "discord_id":
+                            filtered_blocks.append(item)
+                            continue
+                        try:
+                            if int(value) == discord_id:
+                                filtered_blocks.append(item)
+                        except ValueError:
+                            filtered_blocks.append(item)
+                    await broadcast_block_log(
+                        bot,
+                        blocked_gid=ctx.guild_id,
+                        target_user=target_member,
+                        raw_user_id=discord_id,
+                        new_blocks=filtered_blocks or new_blocks,
+                        reason=reason,
+                        blocked_by=ctx.user.id,
+                    )
+            else:
+                await broadcast_block_log(
+                    bot,
+                    blocked_gid=ctx.guild_id,
+                    target_user=None,
+                    raw_user_id=None,
+                    new_blocks=new_blocks,
+                    reason=reason,
+                    blocked_by=ctx.user.id,
+                )
 
         await ctx.followup.send("\n".join(msg), ephemeral=True)

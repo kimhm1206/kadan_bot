@@ -79,6 +79,8 @@ def setup(bot: discord.Bot):
             main_nick, sub_list = delete_main_account(ctx.guild_id, discord_id)
 
             # 🔹 역할/닉네임 정리 (멤버가 서버에 있을 경우만)
+            kick_success = False
+
             if member:
                 for key in ("main_auth_role", "sub_auth_role"):
                     role_id = get_setting_cached(ctx.guild_id, key)
@@ -96,6 +98,12 @@ def setup(bot: discord.Bot):
                     pass
 
                 cleaned_channels, cleaned_messages = await purge_user_messages(ctx.guild, member.id)
+
+                try:
+                    await member.kick(reason=f"차단 조치: {reason}")
+                    kick_success = True
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
             else:
                 cleaned_channels, cleaned_messages = (0, 0)
 
@@ -103,6 +111,9 @@ def setup(bot: discord.Bot):
                 msg.append(
                     f"🧹 메시지 삭제: {cleaned_channels}개 채널에서 {cleaned_messages}개 메시지 삭제"
                 )
+
+            if kick_success:
+                msg.append(f"🚪 <@{discord_id}> 서버에서 추방 완료")
 
             # 🔹 차단 로그 전송
             await broadcast_block_log(
@@ -155,6 +166,7 @@ def setup(bot: discord.Bot):
             main_nick, sub_list = delete_main_account(ctx.guild_id, member.id)
 
             # 역할 제거
+            kick_success = False
             for key in ("main_auth_role", "sub_auth_role"):
                 role_id = get_setting_cached(ctx.guild_id, key)
                 if role_id:
@@ -172,10 +184,19 @@ def setup(bot: discord.Bot):
                 pass
 
             cleaned_channels, cleaned_messages = await purge_user_messages(ctx.guild, member.id)
+
+            try:
+                await member.kick(reason=f"차단 조치: {reason}")
+                kick_success = True
+            except (discord.Forbidden, discord.HTTPException):
+                pass
             if cleaned_channels or cleaned_messages:
                 msg.append(
                     f"🧹 메시지 삭제: {cleaned_channels}개 채널에서 {cleaned_messages}개 메시지 삭제"
                 )
+
+            if kick_success:
+                msg.append(f"🚪 {member.mention} 서버에서 추방 완료")
 
             # 🔹 차단 로그 전송
             await broadcast_block_log(
@@ -331,6 +352,7 @@ async def broadcast_block_log(
         for user_id in processed_users:
             member = ctx.guild.get_member(user_id)
             main_nick, sub_list = delete_main_account(ctx.guild_id, user_id)
+            kick_success = False
 
             if member:
                 for key in ("main_auth_role", "sub_auth_role"):
@@ -348,6 +370,12 @@ async def broadcast_block_log(
                     pass
 
                 cleaned_channels, cleaned_messages = await purge_user_messages(ctx.guild, member.id)
+
+                try:
+                    await member.kick(reason=f"차단 조치: {reason}")
+                    kick_success = True
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
             else:
                 cleaned_channels, cleaned_messages = (0, 0)
 
@@ -355,6 +383,9 @@ async def broadcast_block_log(
                 cleaned_report.append(
                     f"🧹 <@{user_id}>: {cleaned_channels}개 채널에서 {cleaned_messages}개 메시지 삭제"
                 )
+
+            if kick_success:
+                cleaned_report.append(f"🚪 <@{user_id}> 서버에서 추방 완료")
 
             await send_main_delete_log(
                 ctx.bot,

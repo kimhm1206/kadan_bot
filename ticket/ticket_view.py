@@ -22,7 +22,7 @@ class TicketConfirmView(discord.ui.View):
         if not await self._ensure_requester(interaction):
             return
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer()
         channel = await create_ticket(self.member, self.ticket_type)
 
         icon = ICON_MAP.get(self.ticket_type, "📌")

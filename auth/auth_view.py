@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import discord
 from . import auth_embed
 
 
 from utils.function import build_final_nickname,get_setting_cached ,save_main_account, save_sub_account,fetch_character_list,is_main_registered,get_main_account_memberno
+
+PROFILE_IMAGE_PATH = Path(__file__).resolve().parent.parent / "profile.png"
 
 class AuthMainView(discord.ui.View):
     def __init__(self):
@@ -16,7 +20,15 @@ class AuthMainView(discord.ui.View):
             return
         embed = auth_embed.build_trade_intro_embed(get_setting_cached(interaction.guild_id,'main_auth_min_level'))
         view = AuthTradeIntroView(mode="main")
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        if PROFILE_IMAGE_PATH.exists():
+            await interaction.response.send_message(
+                embed=embed,
+                view=view,
+                file=discord.File(PROFILE_IMAGE_PATH, filename="profile.png"),
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="부계정 인증", style=discord.ButtonStyle.primary, custom_id="auth_sub")
     async def sub_auth(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -32,7 +44,12 @@ class AuthMainView(discord.ui.View):
         # ✅ 본계정이 있으면 부계정 인증 안내 Embed + View 출력
         embed = auth_embed.build_sub_intro_embed()
         view = AuthTradeIntroView(mode="sub")
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        if PROFILE_IMAGE_PATH.exists():
+            await interaction.response.send_message(
+                embed=embed, view=view, file=discord.File(PROFILE_IMAGE_PATH, filename="profile.png"), ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="닉네임 변경", style=discord.ButtonStyle.secondary, custom_id="auth_nick")
     async def nick_change(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -134,8 +151,56 @@ class RepChangeConfirmView(discord.ui.View):
         if not ok:
             reason, details = result
             if reason == "blocked":
-                # ✅ 차단된 경우 → 티켓 채널 생성 (block_data 함께 전달)
-                await create_ticket(interaction.user, "차단", block_data=details)
+                # ✅ 차단된 경우 → 재차 차단 등록 후 티켓 채널 생성
+                from utils.function import block_user, get_user_blocked
+                from block.block_commands import broadcast_block_log
+
+                auto_reason = "차단 인증 시도(봇자동탐지)"
+                nickname_list = [c["CharacterName"] for c in self.characters]
+                original_details = details.get("details") if isinstance(details, dict) else details
+                block_details = original_details
+                bot_user_id = interaction.client.user.id if interaction.client.user else interaction.user.id
+                member_no_value = str(self.member_no) if self.member_no else ""
+
+                try:
+                    extra_values = [("nickname", nick) for nick in nickname_list]
+                    if member_no_value:
+                        extra_values.append(("memberNo", member_no_value))
+
+                    new_blocks, _ = block_user(
+                        interaction.guild_id,
+                        interaction.user.id,
+                        auto_reason,
+                        bot_user_id,
+                        extra_values=extra_values,
+                    )
+
+                    refreshed = get_user_blocked(
+                        interaction.guild_id,
+                        interaction.user.id,
+                        member_no_value,
+                        nickname_list,
+                    )
+
+                    if new_blocks:
+                        await broadcast_block_log(
+                            interaction.client,
+                            blocked_gid=interaction.guild_id,
+                            target_user=interaction.guild.get_member(interaction.user.id),
+                            raw_user_id=interaction.user.id,
+                            new_blocks=new_blocks,
+                            reason=auto_reason,
+                            blocked_by=bot_user_id,
+                        )
+
+                    block_details = refreshed or original_details
+
+                except Exception:
+                    msg = format_fail_message(reason, details)
+                    await interaction.response.send_message(msg, ephemeral=True)
+                    return
+
+                await create_ticket(interaction.user, "차단", block_data=block_details)
 
                 embed = discord.Embed(
                     title="🚫 차단된 사용자",

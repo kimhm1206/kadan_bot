@@ -52,8 +52,8 @@ def build_trade_intro_embed(level=1680) -> discord.Embed:
         inline=False
     )
 
-    # 📷 추후 이미지 (예: 어디서 대표캐릭터 변경하는지 캡처)
-    embed.set_image(url="https://example.com/guide_image.png")  # TODO: 실제 이미지 링크로 교체
+    # 📷 인증 절차 안내 이미지 (로컬 리소스)
+    embed.set_image(url="attachment://profile.png")
 
     embed.set_footer(text="대표 캐릭터 변경이 불가능하다면 인증을 진행할 수 없습니다.")
     return embed
@@ -74,6 +74,7 @@ def build_sub_intro_embed() -> discord.Embed:
         ),
         inline=False
     )
+    embed.set_image(url="attachment://profile.png")
     return embed
 
 
@@ -106,4 +107,7 @@ def build_rep_change_embed(main_char: str, server: str, candidates: list[dict]) 
         inline=False
     )
 
+    embed.set_image(url="attachment://mainchar.png")
+
     return embed, target_char
+

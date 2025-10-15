@@ -7,6 +7,7 @@
 
 import discord
 import aiohttp
+from pathlib import Path
 import os
 from urllib.parse import unquote
 from utils.function import get_setting_cached  # ✅ 서버 설정 캐시에서 불러오기
@@ -14,6 +15,8 @@ from .auth_embed import build_rep_change_embed
 from utils.function import is_account_duplicate, get_user_blocked,is_memberno_duplicate
 
 API_TOKEN = os.getenv("API_TOKEN")  # .env에 저장된 토큰
+
+MAINCHAR_IMAGE_PATH = Path(__file__).resolve().parent.parent / "mainchar.png"
 
 async def start_auth(auth_type: str, interaction: discord.Interaction, member_no: str):
     """
@@ -76,7 +79,12 @@ async def start_auth(auth_type: str, interaction: discord.Interaction, member_no
     # characters도 같이 넘겨줌
     view = RepChangeConfirmView(auth_type, target_char, encrypt_member_no, main_char, filtered_chars, member_no)
 
-    await interaction.edit_original_response(embed=embed, view=view)
+    file_kwargs = {}
+    if MAINCHAR_IMAGE_PATH.exists():
+        file_kwargs["attachments"] = [discord.File(MAINCHAR_IMAGE_PATH, filename="mainchar.png")]
+
+    await interaction.edit_original_response(embed=embed, view=view, **file_kwargs)
+
 
         
         

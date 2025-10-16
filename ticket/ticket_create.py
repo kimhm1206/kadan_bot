@@ -1,5 +1,6 @@
 import discord
 from datetime import datetime
+from typing import Optional
 from utils.function import get_setting_cached
 import os
 import aiohttp
@@ -13,6 +14,150 @@ ICON_MAP = {
     "차단": "📛"
 }
 
+
+async def archive_ticket_channel(
+    channel: discord.TextChannel,
+    deleter: discord.abc.User,
+    log_channel: Optional[discord.TextChannel],
+    ticket_type: Optional[str],
+    owner_label: Optional[str],
+) -> None:
+    """티켓 채널 메시지를 정리하고 로그에 남긴 뒤 채널을 삭제합니다."""
+
+    icon = ICON_MAP.get(ticket_type or "", "📌")
+    ticket_name = ticket_type or "티켓"
+    owner_label = owner_label or "알 수 없음"
+    deleter_mention = (
+        deleter.mention
+        if isinstance(deleter, (discord.Member, discord.User))
+        else getattr(deleter, "mention", "알 수 없음")
+    )
+
+    all_messages = []
+    image_attachments = []  # (url, safe_filename)
+
+    async for msg in channel.history(limit=None, oldest_first=True):
+        content = msg.content or ""
+        line = f"[{msg.created_at.strftime('%Y-%m-%d %H:%M')}] {msg.author.display_name}: {content}"
+        if msg.attachments:
+            for att in msg.attachments:
+                ext = att.filename.lower().split(".")[-1]
+                safe_name = f"ticket_img-{channel.id}-{att.id}.{ext}"
+                if ext in ["png", "jpg", "jpeg", "gif", "webp"]:
+                    image_attachments.append((att.url, safe_name))
+                    line += f" (📎 이미지 첨부: {att.filename})"
+                else:
+                    line += f" (📎 첨부파일: {att.filename} → {att.url})"
+        all_messages.append(line)
+
+    log_embed = discord.Embed(
+        title=f"{icon} {ticket_name} 티켓 삭제됨",
+        description=(
+            f"채널: {channel.name}\n"
+            f"개설자: {owner_label}\n"
+            f"삭제자: {deleter_mention}"
+        ),
+        color=discord.Color.dark_gray(),
+    )
+
+    preview_messages = all_messages if len(all_messages) <= 20 else all_messages[-20:]
+    preview_label = "📜 티켓 메시지 로그" if len(all_messages) <= 20 else "📜 최근 20개 메시지"
+    preview_body = "\n".join(preview_messages) if preview_messages else "메시지 없음"
+    force_attachment = len(preview_body) > 1024
+
+    if force_attachment:
+        first_line = preview_messages[0] if preview_messages else "메시지 없음"
+        if len(first_line) > 1000:
+            first_line = first_line[:1000] + "..."
+        preview_body = first_line + "\n\n전체 로그는 첨부 파일을 확인하세요."
+
+    log_embed.add_field(
+        name=preview_label,
+        value=preview_body[:1024] if preview_body else "메시지 없음",
+        inline=False,
+    )
+
+    files = []      # 디스코드 전송용 File 객체
+    tmp_files = []  # 로컬 임시 파일 경로
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            for url, safe_name in image_attachments:
+                try:
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            with open(safe_name, "wb") as f:
+                                f.write(await resp.read())
+                            tmp_files.append(safe_name)
+                except Exception as e:
+                    print(f"⚠️ 이미지 다운로드 실패: {url} ({e})")
+
+        image_file_paths = list(tmp_files)
+
+        needs_text_attachment = len(all_messages) > 20 or force_attachment
+        full_log_text = "\n".join(all_messages)
+
+        if len(image_attachments) == 0:
+            if needs_text_attachment:
+                txt_name = f"ticket_log-{channel.id}.txt"
+                with open(txt_name, "w", encoding="utf-8") as f:
+                    f.write(full_log_text)
+                zip_name = f"ticket_log-{channel.id}.zip"
+                with zipfile.ZipFile(zip_name, "w") as zipf:
+                    zipf.write(txt_name)
+                files.append(discord.File(zip_name))
+                tmp_files.extend([txt_name, zip_name])
+
+        elif len(image_attachments) == 1:
+            last_img = image_file_paths[-1]
+            log_embed.set_image(url=f"attachment://{os.path.basename(last_img)}")
+            files.append(discord.File(last_img))
+            if needs_text_attachment:
+                txt_name = f"ticket_log-{channel.id}.txt"
+                with open(txt_name, "w", encoding="utf-8") as f:
+                    f.write(full_log_text)
+                zip_name = f"ticket_log-{channel.id}.zip"
+                with zipfile.ZipFile(zip_name, "w") as zipf:
+                    zipf.write(txt_name)
+                files.append(discord.File(zip_name))
+                tmp_files.extend([txt_name, zip_name])
+
+        else:
+            zip_name = f"ticket_log-{channel.id}.zip"
+            with zipfile.ZipFile(zip_name, "w") as zipf:
+                if needs_text_attachment:
+                    txt_name = f"ticket_log-{channel.id}.txt"
+                    with open(txt_name, "w", encoding="utf-8") as f:
+                        f.write(full_log_text)
+                    zipf.write(txt_name)
+                    tmp_files.append(txt_name)
+                for img in tmp_files:
+                    zipf.write(img)
+            files.append(discord.File(zip_name))
+            tmp_files.append(zip_name)
+
+            last_img = image_file_paths[-1] if image_file_paths else None
+            if last_img:
+                log_embed.set_image(url=f"attachment://{os.path.basename(last_img)}")
+                files.append(discord.File(last_img))
+
+        if log_channel:
+            await log_channel.send(embed=log_embed, files=files)
+
+        for file in files:
+            try:
+                file.close()
+            except Exception:
+                pass
+
+    finally:
+        for f in tmp_files:
+            try:
+                os.remove(f)
+            except Exception as e:
+                print(f"⚠️ 임시 파일 삭제 실패: {e}")
+
+    await channel.delete(reason=f"{ticket_name} 티켓 정리 및 삭제")
 
 async def create_ticket(member: discord.Member, ticket_type: str, block_data: list = None):
     """
@@ -30,6 +175,8 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
     category = guild.get_channel(int(category_id)) if category_id else None
     log_channel = guild.get_channel(int(log_channel_id)) if log_channel_id else None
+    if log_channel and not isinstance(log_channel, discord.TextChannel):
+        log_channel = None
 
     # ✅ 채널 이름
     now = datetime.now().strftime("%y%m%d%H%M")
@@ -103,139 +250,25 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
             # ✅ Defer (시간 오래 걸릴 수 있음)
             await interaction.response.defer(ephemeral=True)
+            try:
+                await archive_ticket_channel(
+                    channel=channel,
+                    deleter=interaction.user,
+                    log_channel=self.log_ch,
+                    ticket_type=self.t_type,
+                    owner_label=self.owner.mention,
+                )
+            except discord.Forbidden:
+                await interaction.followup.send("⚠️ 채널 삭제 권한이 부족합니다.", ephemeral=True)
+                return
+            except Exception as e:
+                await interaction.followup.send(
+                    f"⚠️ 채널 삭제 중 오류가 발생했습니다: {e}",
+                    ephemeral=True,
+                )
+                return
 
-            # 전체 메시지 수집
-            all_messages = []
-            image_attachments = []  # (url, safe_filename)
-            async for msg in channel.history(limit=None, oldest_first=True):
-                line = f"[{msg.created_at.strftime('%Y-%m-%d %H:%M')}] {msg.author.display_name}: {msg.content or ''}"
-                if msg.attachments:
-                    for att in msg.attachments:
-                        ext = att.filename.lower().split(".")[-1]
-                        safe_name = f"ticket_img-{channel.id}-{att.id}.{ext}"
-                        if ext in ["png", "jpg", "jpeg", "gif", "webp"]:
-                            image_attachments.append((att.url, safe_name))
-                            line += f" (📎 이미지 첨부: {att.filename})"
-                        else:
-                            line += f" (📎 첨부파일: {att.filename} → {att.url})"
-                all_messages.append(line)
-
-            # 로그 embed 기본
-            log_embed = discord.Embed(
-                title=f"{ICON_MAP.get(self.t_type,'📌')} {self.t_type} 티켓 삭제됨",
-                description=(
-                    f"채널: {channel.name}\n"
-                    f"개설자: {self.owner.mention}\n"
-                    f"삭제자: {interaction.user.mention}"
-                ),
-                color=discord.Color.dark_gray()
-            )
-
-            preview_messages = all_messages if len(all_messages) <= 20 else all_messages[-20:]
-            preview_label = "📜 티켓 메시지 로그" if len(all_messages) <= 20 else "📜 최근 20개 메시지"
-            preview_body = "\n".join(preview_messages) if preview_messages else "메시지 없음"
-            force_attachment = len(preview_body) > 1024
-
-            if force_attachment:
-                first_line = preview_messages[0] if preview_messages else "메시지 없음"
-                if len(first_line) > 1000:
-                    first_line = first_line[:1000] + "..."
-                preview_body = first_line + "\n\n전체 로그는 첨부 파일을 확인하세요."
-
-            log_embed.add_field(
-                name=preview_label,
-                value=preview_body[:1024] if preview_body else "메시지 없음",
-                inline=False
-            )
-
-            files = []      # 디스코드 전송용 File 객체
-            tmp_files = []  # 로컬 임시 파일 경로
-
-            # 이미지 다운로드
-            async with aiohttp.ClientSession() as session:
-                for url, safe_name in image_attachments:
-                    try:
-                        async with session.get(url) as resp:
-                            if resp.status == 200:
-                                with open(safe_name, "wb") as f:
-                                    f.write(await resp.read())
-                                tmp_files.append(safe_name)
-                    except Exception as e:
-                        print(f"⚠️ 이미지 다운로드 실패: {url} ({e})")
-
-            image_file_paths = list(tmp_files)
-
-            # ========================
-            # 분기 처리
-            # ========================
-
-            needs_text_attachment = len(all_messages) > 20 or force_attachment
-            full_log_text = "\n".join(all_messages)
-
-            if len(image_attachments) == 0:
-                # 이미지 없음
-                if needs_text_attachment:
-                    txt_name = f"ticket_log-{channel.id}.txt"
-                    with open(txt_name, "w", encoding="utf-8") as f:
-                        f.write(full_log_text)
-                    zip_name = f"ticket_log-{channel.id}.zip"
-                    with zipfile.ZipFile(zip_name, "w") as zipf:
-                        zipf.write(txt_name)
-                    files.append(discord.File(zip_name))
-                    tmp_files.extend([txt_name, zip_name])
-
-            elif len(image_attachments) == 1:
-                # 이미지 1장
-                last_img = image_file_paths[-1]
-                log_embed.set_image(url=f"attachment://{os.path.basename(last_img)}")
-                files.append(discord.File(last_img))
-                if needs_text_attachment:
-                    txt_name = f"ticket_log-{channel.id}.txt"
-                    with open(txt_name, "w", encoding="utf-8") as f:
-                        f.write(full_log_text)
-                    zip_name = f"ticket_log-{channel.id}.zip"
-                    with zipfile.ZipFile(zip_name, "w") as zipf:
-                        zipf.write(txt_name)
-                    files.append(discord.File(zip_name))
-                    tmp_files.extend([txt_name, zip_name])
-
-            else:
-                # 이미지 2장 이상 → 무조건 zip 생성
-                zip_name = f"ticket_log-{channel.id}.zip"
-                with zipfile.ZipFile(zip_name, "w") as zipf:
-                    # 메시지가 20개 초과 → txt 포함
-                    if needs_text_attachment:
-                        txt_name = f"ticket_log-{channel.id}.txt"
-                        with open(txt_name, "w", encoding="utf-8") as f:
-                            f.write(full_log_text)
-                        zipf.write(txt_name)
-                        tmp_files.append(txt_name)
-                    # 모든 이미지 파일 zip에 추가
-                    for img in tmp_files:
-                        zipf.write(img)
-                files.append(discord.File(zip_name))
-                tmp_files.append(zip_name)
-
-                # ✅ 마지막 이미지는 embed에도 표시할 수 있도록 별도 File 추가
-                last_img = image_file_paths[-1] if image_file_paths else None
-                if last_img:
-                    log_embed.set_image(url=f"attachment://{os.path.basename(last_img)}")
-                    files.append(discord.File(last_img))
-
-            # 로그 채널 전송
-            if self.log_ch:
-                await self.log_ch.send(embed=log_embed, files=files)
-
-            # 로컬 파일 삭제
-            for f in tmp_files:
-                try:
-                    os.remove(f)
-                except Exception as e:
-                    print(f"⚠️ 임시 파일 삭제 실패: {e}")
-
-            # 최종 피드백
             await interaction.followup.send("🗑️ 티켓 채널이 삭제됩니다.", ephemeral=True)
-            await channel.delete(reason="티켓 삭제")
 
 
     # ✅ 기본 임베드 + 컨트롤 뷰 전송

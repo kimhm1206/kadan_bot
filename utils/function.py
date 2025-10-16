@@ -209,7 +209,13 @@ def set_setting(guild_id: int, key: str, value: str, changed_by: int, reason: st
         settings_cache[guild_id] = {}
     settings_cache[guild_id][key] = value
 
-def block_user(guild_id: int, data, reason: str | None, blocked_by: int):
+def block_user(
+    guild_id: int,
+    data,
+    reason: str | None,
+    blocked_by: int,
+    extra_values: list[tuple[str, str | int]] | None = None,
+):
     """
     유저/닉네임/discord_id를 입력받아 관련된 모든 인증/삭제 인증 정보를 조회 후
     blocked_users 테이블에 차단을 등록한다.
@@ -292,6 +298,13 @@ def block_user(guild_id: int, data, reason: str | None, blocked_by: int):
                     inserts.append(("discord_id", str(did)))
                 if stove_member_no:
                     inserts.append(("memberNo", stove_member_no))
+
+        # 🔹 외부에서 전달된 데이터 병합 (memberNo, nickname 등)
+        if extra_values:
+            for dtype, value in extra_values:
+                if value is None:
+                    continue
+                inserts.append((str(dtype), str(value)))
 
         # ✅ 중복 제거
         inserts = list(set(inserts))

@@ -131,19 +131,22 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 color=discord.Color.dark_gray()
             )
 
-            # 최근 메시지 필드
-            if len(all_messages) <= 20:
-                log_embed.add_field(
-                    name="📜 티켓 메시지 로그",
-                    value="\n".join(all_messages) or "메시지 없음",
-                    inline=False
-                )
-            else:
-                log_embed.add_field(
-                    name="📜 최근 20개 메시지",
-                    value="\n".join(all_messages[-20:]),
-                    inline=False
-                )
+            preview_messages = all_messages if len(all_messages) <= 20 else all_messages[-20:]
+            preview_label = "📜 티켓 메시지 로그" if len(all_messages) <= 20 else "📜 최근 20개 메시지"
+            preview_body = "\n".join(preview_messages) if preview_messages else "메시지 없음"
+            force_attachment = len(preview_body) > 1024
+
+            if force_attachment:
+                first_line = preview_messages[0] if preview_messages else "메시지 없음"
+                if len(first_line) > 1000:
+                    first_line = first_line[:1000] + "..."
+                preview_body = first_line + "\n\n전체 로그는 첨부 파일을 확인하세요."
+
+            log_embed.add_field(
+                name=preview_label,
+                value=preview_body[:1024] if preview_body else "메시지 없음",
+                inline=False
+            )
 
             files = []      # 디스코드 전송용 File 객체
             tmp_files = []  # 로컬 임시 파일 경로
@@ -160,16 +163,21 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                     except Exception as e:
                         print(f"⚠️ 이미지 다운로드 실패: {url} ({e})")
 
+            image_file_paths = list(tmp_files)
+
             # ========================
             # 분기 처리
             # ========================
 
+            needs_text_attachment = len(all_messages) > 20 or force_attachment
+            full_log_text = "\n".join(all_messages)
+
             if len(image_attachments) == 0:
                 # 이미지 없음
-                if len(all_messages) > 20:
+                if needs_text_attachment:
                     txt_name = f"ticket_log-{channel.id}.txt"
                     with open(txt_name, "w", encoding="utf-8") as f:
-                        f.write("\n".join(all_messages))
+                        f.write(full_log_text)
                     zip_name = f"ticket_log-{channel.id}.zip"
                     with zipfile.ZipFile(zip_name, "w") as zipf:
                         zipf.write(txt_name)
@@ -178,13 +186,13 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
             elif len(image_attachments) == 1:
                 # 이미지 1장
-                last_img = tmp_files[-1]
+                last_img = image_file_paths[-1]
                 log_embed.set_image(url=f"attachment://{os.path.basename(last_img)}")
                 files.append(discord.File(last_img))
-                if len(all_messages) > 20:
+                if needs_text_attachment:
                     txt_name = f"ticket_log-{channel.id}.txt"
                     with open(txt_name, "w", encoding="utf-8") as f:
-                        f.write("\n".join(all_messages))
+                        f.write(full_log_text)
                     zip_name = f"ticket_log-{channel.id}.zip"
                     with zipfile.ZipFile(zip_name, "w") as zipf:
                         zipf.write(txt_name)
@@ -196,10 +204,10 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 zip_name = f"ticket_log-{channel.id}.zip"
                 with zipfile.ZipFile(zip_name, "w") as zipf:
                     # 메시지가 20개 초과 → txt 포함
-                    if len(all_messages) > 20:
+                    if needs_text_attachment:
                         txt_name = f"ticket_log-{channel.id}.txt"
                         with open(txt_name, "w", encoding="utf-8") as f:
-                            f.write("\n".join(all_messages))
+                            f.write(full_log_text)
                         zipf.write(txt_name)
                         tmp_files.append(txt_name)
                     # 모든 이미지 파일 zip에 추가
@@ -209,9 +217,10 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 tmp_files.append(zip_name)
 
                 # ✅ 마지막 이미지는 embed에도 표시할 수 있도록 별도 File 추가
-                last_img = tmp_files[-2] if len(all_messages) > 20 else tmp_files[-1]
-                log_embed.set_image(url=f"attachment://{os.path.basename(last_img)}")
-                files.append(discord.File(last_img))
+                last_img = image_file_paths[-1] if image_file_paths else None
+                if last_img:
+                    log_embed.set_image(url=f"attachment://{os.path.basename(last_img)}")
+                    files.append(discord.File(last_img))
 
             # 로그 채널 전송
             if self.log_ch:
@@ -240,7 +249,12 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
             server_name = get_setting_cached(gid, "server") or str(gid)
 
             blocked_by_id = b.get("blocked_by")
-            blocked_by = f"<@{blocked_by_id}>" if blocked_by_id else "알 수 없음"
+            if blocked_by_id and member.guild.me and blocked_by_id == member.guild.me.id:
+                blocked_by = "[봇]"
+            elif blocked_by_id:
+                blocked_by = f"<@{blocked_by_id}>"
+            else:
+                blocked_by = "알 수 없음"
 
             reason_list.append(
                 f"[서버:{server_name}] {b['data_type']}={b['value']} "

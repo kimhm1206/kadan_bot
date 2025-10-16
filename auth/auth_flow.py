@@ -7,6 +7,7 @@
 
 import discord
 import aiohttp
+from pathlib import Path
 import os
 from urllib.parse import unquote
 from utils.function import get_setting_cached  # ✅ 서버 설정 캐시에서 불러오기
@@ -14,6 +15,8 @@ from .auth_embed import build_rep_change_embed
 from utils.function import is_account_duplicate, get_user_blocked,is_memberno_duplicate
 
 API_TOKEN = os.getenv("API_TOKEN")  # .env에 저장된 토큰
+
+MAINCHAR_IMAGE_PATH = Path(__file__).resolve().parent.parent / "mainchar.png"
 
 async def start_auth(auth_type: str, interaction: discord.Interaction, member_no: str):
     """
@@ -76,7 +79,15 @@ async def start_auth(auth_type: str, interaction: discord.Interaction, member_no
     # characters도 같이 넘겨줌
     view = RepChangeConfirmView(auth_type, target_char, encrypt_member_no, main_char, filtered_chars, member_no)
 
-    await interaction.edit_original_response(embed=embed, view=view)
+    if MAINCHAR_IMAGE_PATH.exists():
+        await interaction.edit_original_response(
+            embed=embed,
+            view=view,
+            files=[discord.File(MAINCHAR_IMAGE_PATH, filename="mainchar.png")],
+        )
+    else:
+        await interaction.edit_original_response(embed=embed, view=view)
+
 
         
         
@@ -179,7 +190,15 @@ async def verify_conditions(auth_type, guild_id, discord_id, member_no, characte
     # 3️⃣ 차단 검사 (공통)
     blocked = get_user_blocked(guild_id, discord_id, member_no, nickname_list)
     if blocked:
-        return False, ("blocked", blocked)
+        return False, (
+            "blocked",
+            {
+                "details": blocked,
+                "discord_id": discord_id,
+                "member_no": member_no,
+                "nicknames": nickname_list,
+            },
+        )
 
     return True, ("ok", "검증 통과")
 
@@ -196,9 +215,11 @@ def format_fail_message(reason: str, details) -> str:
         return f"⚠️ 아이템 레벨 조건을 충족하지 못했습니다.\n최소 요구 레벨: {details}"
 
     elif reason == "blocked":
+        blocked_details = details.get("details") if isinstance(details, dict) else details
+        blocked_details = blocked_details or []
         reason_list = [
             f"[서버:{b['guild_id']}] {b['data_type']}={b['value']} (사유:{b['reason']})"
-            for b in details
+            for b in blocked_details
         ]
         return "🚫 차단된 사용자입니다.\n" + "\n".join(reason_list) + "\n관리자에게 문의해주세요."
 

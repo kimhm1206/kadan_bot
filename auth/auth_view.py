@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import discord
 from . import auth_embed
 
 
 from utils.function import build_final_nickname,get_setting_cached ,save_main_account, save_sub_account,fetch_character_list,is_main_registered,get_main_account_memberno
+
+PROFILE_IMAGE_PATH = Path(__file__).resolve().parent.parent / "profile.png"
 
 class AuthMainView(discord.ui.View):
     def __init__(self):
@@ -16,7 +20,15 @@ class AuthMainView(discord.ui.View):
             return
         embed = auth_embed.build_trade_intro_embed(get_setting_cached(interaction.guild_id,'main_auth_min_level'))
         view = AuthTradeIntroView(mode="main")
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        if PROFILE_IMAGE_PATH.exists():
+            await interaction.response.send_message(
+                embed=embed,
+                view=view,
+                file=discord.File(PROFILE_IMAGE_PATH, filename="profile.png"),
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="부계정 인증", style=discord.ButtonStyle.primary, custom_id="auth_sub")
     async def sub_auth(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -32,7 +44,12 @@ class AuthMainView(discord.ui.View):
         # ✅ 본계정이 있으면 부계정 인증 안내 Embed + View 출력
         embed = auth_embed.build_sub_intro_embed()
         view = AuthTradeIntroView(mode="sub")
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        if PROFILE_IMAGE_PATH.exists():
+            await interaction.response.send_message(
+                embed=embed, view=view, file=discord.File(PROFILE_IMAGE_PATH, filename="profile.png"), ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="닉네임 변경", style=discord.ButtonStyle.secondary, custom_id="auth_nick")
     async def nick_change(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -134,8 +151,56 @@ class RepChangeConfirmView(discord.ui.View):
         if not ok:
             reason, details = result
             if reason == "blocked":
-                # ✅ 차단된 경우 → 티켓 채널 생성 (block_data 함께 전달)
-                await create_ticket(interaction.user, "차단", block_data=details)
+                # ✅ 차단된 경우 → 재차 차단 등록 후 티켓 채널 생성
+                from utils.function import block_user, get_user_blocked
+                from block.block_commands import broadcast_block_log
+
+                auto_reason = "차단 인증 시도(봇자동탐지)"
+                nickname_list = [c["CharacterName"] for c in self.characters]
+                original_details = details.get("details") if isinstance(details, dict) else details
+                block_details = original_details
+                bot_user_id = interaction.client.user.id if interaction.client.user else interaction.user.id
+                member_no_value = str(self.member_no) if self.member_no else ""
+
+                try:
+                    extra_values = [("nickname", nick) for nick in nickname_list]
+                    if member_no_value:
+                        extra_values.append(("memberNo", member_no_value))
+
+                    new_blocks, _ = block_user(
+                        interaction.guild_id,
+                        interaction.user.id,
+                        auto_reason,
+                        bot_user_id,
+                        extra_values=extra_values,
+                    )
+
+                    refreshed = get_user_blocked(
+                        interaction.guild_id,
+                        interaction.user.id,
+                        member_no_value,
+                        nickname_list,
+                    )
+
+                    if new_blocks:
+                        await broadcast_block_log(
+                            interaction.client,
+                            blocked_gid=interaction.guild_id,
+                            target_user=interaction.guild.get_member(interaction.user.id),
+                            raw_user_id=interaction.user.id,
+                            new_blocks=new_blocks,
+                            reason=auto_reason,
+                            blocked_by=bot_user_id,
+                        )
+
+                    block_details = refreshed or original_details
+
+                except Exception:
+                    msg = format_fail_message(reason, details)
+                    await interaction.response.send_message(msg, ephemeral=True)
+                    return
+
+                await create_ticket(interaction.user, "차단", block_data=block_details)
 
                 embed = discord.Embed(
                     title="🚫 차단된 사용자",
@@ -158,7 +223,15 @@ class RepChangeConfirmView(discord.ui.View):
                 return
 
         
-        # ✅ 다음 단계 → 닉네임 선택 뷰 띄우기
+        # ✅ 다음 단계 → 닉네임 선택 뷰 띄우기 (캐릭터가 없는 경우 예외 처리)
+        if not self.characters:
+            await interaction.response.edit_message(
+                content="❌ 선택할 수 있는 캐릭터를 찾지 못했습니다. 다시 인증을 진행해 주세요.",
+                embed=None,
+                view=None
+            )
+            return
+
         await interaction.response.edit_message(
             content="서버에 사용할 대표 캐릭터를 선택해주세요:",
             embed=None,
@@ -166,21 +239,49 @@ class RepChangeConfirmView(discord.ui.View):
         )
             
 class NicknameSelectView(discord.ui.View):
+    OPTIONS_PER_SELECT = 25
+
     def __init__(self, auth_type: str, member_no: str, characters: list[dict]):
         super().__init__(timeout=600)
         self.auth_type = auth_type
         self.member_no = member_no
         self.characters = characters
         self.selected_nick: str | None = None
+        self.selects: list[NicknameSelect] = []
 
-        options = [
-            discord.SelectOption(
-                label=c["CharacterName"],
-                description=f"{c['ServerName']} | Lv.{c['ItemAvgLevel']}"
-            )
-            for c in characters
+        chunks = [
+            self.characters[i : i + self.OPTIONS_PER_SELECT]
+            for i in range(0, len(self.characters), self.OPTIONS_PER_SELECT)
         ]
-        self.add_item(NicknameSelect(options, self))
+
+        if not chunks:
+            self.base_placeholders = []
+            return
+
+        self.base_placeholders = [
+            self._build_placeholder(idx, len(chunks)) for idx in range(len(chunks))
+        ]
+
+        for idx, chunk in enumerate(chunks):
+            select = NicknameSelect(self, idx, chunk)
+            self.selects.append(select)
+            self.add_item(select)
+
+    def _build_placeholder(self, index: int, total: int) -> str:
+        if total <= 1:
+            return "사용할 닉네임을 선택하세요"
+        return f"사용할 닉네임 목록 {index + 1}"
+
+    def apply_selection(self, index: int, nickname: str):
+        self.selected_nick = nickname
+        for idx, select in enumerate(self.selects):
+            for option in select.options:
+                option.default = idx == index and option.value == nickname
+
+            if idx == index:
+                select.placeholder = f"{self.base_placeholders[idx]} · 선택: {nickname}"
+            else:
+                select.placeholder = self.base_placeholders[idx]
 
     @discord.ui.button(label="✅ 확인", style=discord.ButtonStyle.success, custom_id="nick_confirm", row=2)
     async def confirm(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -284,10 +385,25 @@ class NicknameSelectView(discord.ui.View):
         self.stop()
 
 class NicknameSelect(discord.ui.Select):
-    def __init__(self, options, parent_view):
-        super().__init__(placeholder="사용할 닉네임을 선택하세요", options=options, min_values=1, max_values=1)
+    def __init__(self, parent_view: NicknameSelectView, index: int, characters: list[dict]):
         self.parent_view = parent_view
+        self.index = index
+        placeholder = parent_view.base_placeholders[index]
+        super().__init__(
+            placeholder=placeholder,
+            options=[
+                discord.SelectOption(
+                    label=c["CharacterName"],
+                    description=f"{c['ServerName']} | Lv.{c['ItemAvgLevel']}",
+                    value=c["CharacterName"],
+                )
+                for c in characters
+            ],
+            min_values=1,
+            max_values=1,
+        )
 
     async def callback(self, interaction: discord.Interaction):
-        self.parent_view.selected_nick = self.values[0]  # ✅ 선택값 저장
-        await interaction.response.defer()  # 무응답 처리
+        selected = self.values[0]
+        self.parent_view.apply_selection(self.index, selected)
+        await interaction.response.edit_message(view=self.parent_view)

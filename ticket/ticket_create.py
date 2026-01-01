@@ -250,6 +250,13 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
             # ✅ Defer (시간 오래 걸릴 수 있음)
             await interaction.response.defer(ephemeral=True)
+
+            # 삭제를 시작했다는 안내를 먼저 남겨 채널 삭제 후 Unknown Channel 오류를 방지
+            try:
+                await interaction.followup.send("🗑️ 티켓 채널 삭제를 시작합니다.", ephemeral=True)
+            except Exception:
+                pass
+
             try:
                 await archive_ticket_channel(
                     channel=channel,
@@ -267,8 +274,6 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                     ephemeral=True,
                 )
                 return
-
-            await interaction.followup.send("🗑️ 티켓 채널이 삭제됩니다.", ephemeral=True)
 
 
     # ✅ 기본 임베드 + 컨트롤 뷰 전송

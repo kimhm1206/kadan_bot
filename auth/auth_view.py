@@ -4,9 +4,78 @@ import discord
 from . import auth_embed
 
 
-from utils.function import build_final_nickname,get_setting_cached ,save_main_account, save_sub_account,fetch_character_list,is_main_registered,get_main_account_memberno
+from utils.function import (
+    build_final_nickname,
+    get_setting_cached,
+    save_main_account,
+    save_sub_account,
+    fetch_character_list,
+    is_main_registered,
+    get_main_account_memberno,
+    has_sub_accounts,
+    delete_main_account,
+)
+from auth.auth_logger import send_main_delete_log
 
 PROFILE_IMAGE_PATH = Path(__file__).resolve().parent.parent / "profile.png"
+
+async def _reset_user_auth(interaction: discord.Interaction):
+    """본계정 없이 부계정만 존재하는 사용자의 인증을 초기화"""
+    main_nick, sub_list = delete_main_account(interaction.guild_id, interaction.user.id)
+    member = interaction.guild.get_member(interaction.user.id) if interaction.guild else None
+
+    # 역할 제거
+    for key in ("main_auth_role", "sub_auth_role"):
+        role_id = get_setting_cached(interaction.guild_id, key)
+        if role_id and member:
+            role = interaction.guild.get_role(int(role_id))
+            if role:
+                try:
+                    await member.remove_roles(role)
+                except discord.Forbidden:
+                    pass
+    # 닉네임 초기화
+    if member:
+        try:
+            await member.edit(nick=None)
+        except discord.Forbidden:
+            pass
+
+    await send_main_delete_log(interaction.client, interaction.guild_id, interaction.user, main_nick, sub_list)
+
+
+def _has_sub_only(guild_id: int, user_id: int) -> bool:
+    return (not is_main_registered(guild_id, user_id)) and has_sub_accounts(guild_id, user_id)
+
+
+class ResetAuthView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
+
+    @discord.ui.button(label="🔄 인증 초기화", style=discord.ButtonStyle.danger, custom_id="auth_reset")
+    async def reset(self, button: discord.ui.Button, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await _reset_user_auth(interaction)
+        await interaction.followup.send(
+            "✅ 인증 정보를 초기화했습니다. 본계정 인증부터 다시 진행해주세요.",
+            ephemeral=True,
+        )
+        self.stop()
+
+
+async def send_reset_prompt_if_sub_only(interaction: discord.Interaction) -> bool:
+    """부계정만 가진 상태라면 안내 메시지 + 초기화 버튼을 띄우고 True 반환"""
+    if not _has_sub_only(interaction.guild_id, interaction.user.id):
+        return False
+
+    await interaction.response.send_message(
+        "⚠️ 본계정 인증이 누락되어 있습니다.\n"
+        "인증 현황을 초기화한 뒤, **본계정 인증**부터 다시 진행해주세요.",
+        view=ResetAuthView(),
+        ephemeral=True,
+    )
+    return True
+
 
 class AuthMainView(discord.ui.View):
     def __init__(self):
@@ -32,7 +101,8 @@ class AuthMainView(discord.ui.View):
 
     @discord.ui.button(label="부계정 인증", style=discord.ButtonStyle.primary, custom_id="auth_sub")
     async def sub_auth(self, button: discord.ui.Button, interaction: discord.Interaction):
-
+        if await send_reset_prompt_if_sub_only(interaction):
+            return
         # ✅ 메인 계정 등록 여부 확인
         if not is_main_registered(interaction.guild_id, interaction.user.id):
             await interaction.response.send_message(
@@ -55,6 +125,8 @@ class AuthMainView(discord.ui.View):
     async def nick_change(self, button: discord.ui.Button, interaction: discord.Interaction):
         from .change_nick import NickChangeView
         from utils.function import is_main_registered, get_main_account_memberno,fetch_character_list
+        if await send_reset_prompt_if_sub_only(interaction):
+            return
         # 본계정 등록 여부 확인
         if not is_main_registered(interaction.guild_id, interaction.user.id):
             await interaction.response.send_message("❌ 먼저 본계정 인증을 완료해 주세요.", ephemeral=True)
@@ -79,6 +151,8 @@ class AuthMainView(discord.ui.View):
 
     @discord.ui.button(label="인증 계정 설정", style=discord.ButtonStyle.secondary, custom_id="auth_config")
     async def auth_config(self, button: discord.ui.Button, interaction: discord.Interaction):
+        if await send_reset_prompt_if_sub_only(interaction):
+            return
         if not is_main_registered(interaction.guild_id, interaction.user.id):
             await interaction.response.send_message("❌ 먼저 본계정 인증을 완료해 주세요.", ephemeral=True)
             return

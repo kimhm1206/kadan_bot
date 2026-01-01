@@ -10,7 +10,7 @@ import aiohttp
 from pathlib import Path
 import os
 from urllib.parse import unquote
-from utils.function import get_setting_cached  # ✅ 서버 설정 캐시에서 불러오기
+from utils.function import get_setting_cached, is_main_registered  # ✅ 서버 설정 캐시에서 불러오기
 from .auth_embed import build_rep_change_embed
 from utils.function import is_account_duplicate, get_user_blocked,is_memberno_duplicate
 
@@ -169,6 +169,9 @@ async def verify_conditions(auth_type, guild_id, discord_id, member_no, characte
             return False, ("duplicate", duplicates)
 
     elif auth_type == "sub":
+        # 부계정 인증 전에 본계정 보유 여부 확인 (서버 사이드 차단)
+        if not is_main_registered(guild_id, discord_id):
+            return False, ("main_required", None)
         # 본계정 + 부계정 테이블 전부에서 memberNo만 검사
         duplicates = is_memberno_duplicate(guild_id, member_no)
         if duplicates:
@@ -222,6 +225,9 @@ def format_fail_message(reason: str, details) -> str:
             for b in blocked_details
         ]
         return "🚫 차단된 사용자입니다.\n" + "\n".join(reason_list) + "\n관리자에게 문의해주세요."
+
+    elif reason == "main_required":
+        return "❌ 먼저 본계정 인증을 완료해 주세요."
 
     else:
         return "❌ 인증에 실패했습니다. 다시 시도해주세요."

@@ -47,6 +47,12 @@ class AuthSubModal(discord.ui.Modal):
             await interaction.response.send_message("❌ 올바른 마이페이지 링크를 입력해주세요.", ephemeral=True)
             return
 
-        await auth_flow.start_auth(self.type, interaction, member_no)
+        from utils.function import is_main_registered
+        from auth.auth_view import send_reset_prompt_if_sub_only  # 순환 방지 주의: 내부 함수 사용
+        if not is_main_registered(interaction.guild_id, interaction.user.id):
+            # 부계정만 인증된 상태일 수도 있으므로 초기화 안내
+            await send_reset_prompt_if_sub_only(interaction)
+            return
 
+        await auth_flow.start_auth(self.type, interaction, member_no)
 

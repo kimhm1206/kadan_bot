@@ -10,6 +10,7 @@ from utils.function import (
     delete_main_account,
     fetch_character_list_by_nickname,
     get_setting_cached,
+    get_conn,
 )
 
 
@@ -58,7 +59,14 @@ def setup(bot: discord.Bot):
     async def block_by_id(
         ctx: discord.ApplicationContext,
         user_id: discord.Option(str, description="차단할 유저의 Discord ID"),  # type: ignore
-        reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)")  # type: ignore
+        reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)"),  # type: ignore
+        ban_member: discord.Option(
+            str,
+            description="서버에서 추방(벤)까지 수행할지 선택 (기본: X)",
+            required=False,
+            choices=["O", "X"],
+            default="X",
+        ),  # type: ignore
     ):
         await ctx.defer(ephemeral=True)
         guild = ctx.guild
@@ -85,6 +93,7 @@ def setup(bot: discord.Bot):
                 msg.append(f"- {dtype}: `{val}`")
 
         if new_blocks:
+            ban_requested = ban_member == "O"
             # 🔹 멤버 객체 확인
             member = guild.get_member(discord_id)
 
@@ -117,8 +126,21 @@ def setup(bot: discord.Bot):
                     kick_success = True
                 except (discord.Forbidden, discord.HTTPException):
                     pass
+
+                if ban_requested:
+                    try:
+                        await guild.ban(member, reason=f"차단 조치: {reason}", delete_message_days=0)
+                        msg.append("⛔ 서버 밴 처리 완료")
+                    except (discord.Forbidden, discord.HTTPException):
+                        msg.append("⚠️ 서버 밴 처리 실패(권한 확인 필요)")
             else:
                 cleaned_channels, cleaned_messages = (0, 0)
+                if ban_requested:
+                    try:
+                        await guild.ban(discord.Object(id=discord_id), reason=f"차단 조치: {reason}", delete_message_days=0)
+                        msg.append("⛔ 서버 밴 처리 완료")
+                    except (discord.Forbidden, discord.HTTPException):
+                        msg.append("⚠️ 서버 밴 처리 실패(권한 확인 필요)")
 
             if cleaned_channels or cleaned_messages:
                 msg.append(
@@ -159,7 +181,14 @@ def setup(bot: discord.Bot):
     async def block_by_member(
         ctx: discord.ApplicationContext,
         member: discord.Option(discord.Member, description="차단할 서버 멤버"), # type: ignore
-        reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)") # type: ignore
+        reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)"), # type: ignore
+        ban_member: discord.Option(
+            str,
+            description="서버에서 추방(벤)까지 수행할지 선택 (기본: X)",
+            required=False,
+            choices=["O", "X"],
+            default="X",
+        ), # type: ignore
     ):
         await ctx.defer(ephemeral=True)
         guild = ctx.guild
@@ -168,6 +197,7 @@ def setup(bot: discord.Bot):
             return
 
         new_blocks, already_blocked = block_user(ctx.guild_id, member, reason, ctx.user.id)
+        ban_requested = ban_member == "O"
 
         msg = [f"🚫 {member.mention} 처리 결과:"]
         if new_blocks:
@@ -208,6 +238,13 @@ def setup(bot: discord.Bot):
                 kick_success = True
             except (discord.Forbidden, discord.HTTPException):
                 pass
+
+            if ban_requested:
+                try:
+                    await guild.ban(member, reason=f"차단 조치: {reason}", delete_message_days=0)
+                    msg.append("⛔ 서버 밴 처리 완료")
+                except (discord.Forbidden, discord.HTTPException):
+                    msg.append("⚠️ 서버 밴 처리 실패(권한 확인 필요)")
             if cleaned_channels or cleaned_messages:
                 msg.append(
                     f"🧹 메시지 삭제: {cleaned_channels}개 채널에서 {cleaned_messages}개 메시지 삭제"
@@ -327,7 +364,14 @@ async def broadcast_block_log(
     async def block_by_nickname(
         ctx: discord.ApplicationContext,
         nickname: discord.Option(str, description="차단할 로스트아크 닉네임"),
-        reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)")
+        reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)"),
+        ban_member: discord.Option(
+            str,
+            description="서버에서 추방까지 수행할지 선택 (기본: X)",
+            required=False,
+            choices=["O", "X"],
+            default="X",
+        ),
     ):
         await ctx.defer(ephemeral=True)
         guild = ctx.guild
@@ -343,6 +387,36 @@ async def broadcast_block_log(
         nickname_set = {c.get("CharacterName") for c in characters if c.get("CharacterName")}
         extra_values = [("nickname", n) for n in nickname_set if n and n != nickname]
 
+        # 🔎 닉네임으로 조회된 모든 캐릭터의 memberNo를 역추적하여 연결된 디스코드/부계정까지 차단 대상에 포함
+        member_nos: set[str] = set()
+        for char in characters:
+            member_no = char.get("MemberNo") or char.get("memberNo")
+            if member_no:
+                member_nos.add(str(member_no))
+
+        # memberNo 기준으로 본/부계정 테이블에서 연결된 discord_id와 stove_member_no, nickname을 수집
+        with get_conn() as conn, conn.cursor() as cur:
+            for member_no in member_nos:
+                extra_values.append(("memberNo", member_no))
+
+                for table in (
+                    f"auth_accounts_{ctx.guild_id}",
+                    f"deleted_auth_accounts_{ctx.guild_id}",
+                    f"auth_sub_accounts_{ctx.guild_id}",
+                    f"deleted_auth_sub_accounts_{ctx.guild_id}",
+                ):
+                    cur.execute(
+                        f"SELECT discord_user_id, stove_member_no, nickname FROM {table} WHERE stove_member_no = %s",
+                        (member_no,),
+                    )
+                    for did, stove_no, nick in cur.fetchall():
+                        if did:
+                            extra_values.append(("discord_id", str(did)))
+                        if stove_no:
+                            extra_values.append(("memberNo", stove_no))
+                        if nick:
+                            extra_values.append(("nickname", nick))
+
         new_blocks, already_blocked = block_user(
             ctx.guild_id,
             nickname,
@@ -351,6 +425,7 @@ async def broadcast_block_log(
             extra_values=extra_values,
         )
 
+        ban_requested = ban_member == "O"
         msg = [f"🚫 닉네임 `{nickname}` 처리 결과:"]
         if new_blocks:
             msg.append("✅ 새로 차단된 정보:")
@@ -408,6 +483,13 @@ async def broadcast_block_log(
 
             if kick_success:
                 cleaned_report.append(f"🚪 <@{user_id}> 서버에서 추방 완료")
+
+            if ban_requested:
+                try:
+                    await guild.ban(member or discord.Object(id=user_id), reason=f"차단 조치: {reason}", delete_message_days=0)
+                    cleaned_report.append("⛔ 서버 밴 처리 완료")
+                except (discord.Forbidden, discord.HTTPException):
+                    cleaned_report.append("⚠️ 서버 밴 처리 실패(권한 확인 필요)")
 
             await send_main_delete_log(
                 ctx.bot,

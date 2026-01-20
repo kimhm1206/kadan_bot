@@ -169,7 +169,17 @@ def get_setting_cached(guild_id: int = None, key: str = None):
         return settings_cache
     if key is None:
         return settings_cache.get(guild_id, {})
-    return settings_cache.get(guild_id, {}).get(key)
+    cached_value = settings_cache.get(guild_id, {}).get(key)
+    if cached_value is not None:
+        return cached_value
+    if guild_id is None:
+        return None
+    value = get_setting_value(guild_id, key)
+    if value is not None:
+        if guild_id not in settings_cache:
+            settings_cache[guild_id] = {}
+        settings_cache[guild_id][key] = value
+    return value
 
 def set_setting(guild_id: int, key: str, value: str, changed_by: int, reason: str = "edit"):
     """설정 저장 + 로그 기록 (DB + 캐시 동시에 업데이트)"""
@@ -627,6 +637,24 @@ def get_sub_accounts(guild_id: int, discord_id: int) -> list[tuple[int, str]]:
             (discord_id,)
         )
         return cur.fetchall()  # [(sub_number, nickname), ...]
+
+def get_auth_discord_ids(guild_id: int) -> list[int]:
+    """
+    본계정/부계정 인증 테이블에 존재하는 discord_user_id 목록 반환
+    """
+    table_main = f"auth_accounts_{guild_id}"
+    table_sub = f"auth_sub_accounts_{guild_id}"
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT DISTINCT discord_user_id FROM (
+                SELECT discord_user_id FROM {table_main}
+                UNION
+                SELECT discord_user_id FROM {table_sub}
+            ) AS ids
+            """
+        )
+        return [row[0] for row in cur.fetchall()]
 
 def delete_main_account(guild_id: int, discord_id: int) -> tuple[str | None, list[tuple[int, str]]]:
     """

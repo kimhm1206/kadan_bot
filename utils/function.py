@@ -628,6 +628,24 @@ def get_sub_accounts(guild_id: int, discord_id: int) -> list[tuple[int, str]]:
         )
         return cur.fetchall()  # [(sub_number, nickname), ...]
 
+def get_auth_discord_ids(guild_id: int) -> list[int]:
+    """
+    본계정/부계정 인증 테이블에 존재하는 discord_user_id 목록 반환
+    """
+    table_main = f"auth_accounts_{guild_id}"
+    table_sub = f"auth_sub_accounts_{guild_id}"
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT DISTINCT discord_user_id FROM (
+                SELECT discord_user_id FROM {table_main}
+                UNION
+                SELECT discord_user_id FROM {table_sub}
+            ) AS ids
+            """
+        )
+        return [row[0] for row in cur.fetchall()]
+
 def delete_main_account(guild_id: int, discord_id: int) -> tuple[str | None, list[tuple[int, str]]]:
     """
     본계정 + 모든 부계정 → deleted 테이블 이관

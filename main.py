@@ -2,12 +2,14 @@ import discord
 from dotenv import load_dotenv
 import os
 import argparse
+import asyncio
 
 
 # 인텐트 설정
 intents = discord.Intents.default()
 intents.members = True
 bot = discord.Bot(intents=intents)
+second_bot = discord.Bot(intents=intents)
 
 # 봇 실행 시
 @bot.event
@@ -52,14 +54,33 @@ async def on_ready():
             
     await send_default_message(bot)
     await bot.sync_commands()
+
+@bot.event
+async def on_member_remove(member: discord.Member):
+    from utils.function import delete_main_account
+    from auth.auth_logger import send_main_delete_log
+
+    main_nick, sub_list = delete_main_account(member.guild.id, member.id)
+    if not main_nick and not sub_list:
+        return
+
+    await send_main_delete_log(bot, member.guild.id, member, main_nick, sub_list)
+
+@second_bot.event
+async def on_ready():
+    print(f"✅ 세컨드 봇 실행 완료: {second_bot.user} (ID: {second_bot.user.id})")
+    await second_bot.sync_commands()
 # --------------------
 # Cog/Commands 등록
 # --------------------
-def load_extensions():
+def load_extensions(target_bot: discord.Bot):
     # 설정 관련 명령어 등록
-    bot.load_extension("config.config_commands")
-    bot.load_extension("block.block_commands")
-    bot.load_extension("utils.commands")
+    target_bot.load_extension("config.config_commands")
+    target_bot.load_extension("block.block_commands")
+    target_bot.load_extension("utils.commands")
+
+def load_secondary_extensions(target_bot: discord.Bot):
+    target_bot.load_extension("utils.secondary_commands")
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Kadan Bot 실행 옵션")
@@ -77,9 +98,24 @@ if __name__ == "__main__":
         token = os.getenv("BOT_TOKEN_TEST")
     else:
         token = os.getenv("BOT_TOKEN_PROD")
-        
-    if token:
-        load_extensions()   # ✅ 실행 전에 명령어 불러오기
-        bot.run(token)
-    else:
-        print("❌ .env 파일에서 봇 토큰을 찾을 수 없습니다.")
+
+    second_token = os.getenv("BOT_TOKEN_SECOND")
+
+    async def runner():
+        tasks = []
+        if token:
+            load_extensions(bot)
+            tasks.append(asyncio.create_task(bot.start(token)))
+        else:
+            print("❌ .env 파일에서 봇 토큰을 찾을 수 없습니다.")
+
+        if second_token:
+            load_secondary_extensions(second_bot)
+            tasks.append(asyncio.create_task(second_bot.start(second_token)))
+        else:
+            print("⚠️ .env 파일에서 세컨드 봇 토큰을 찾을 수 없습니다.")
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    asyncio.run(runner())

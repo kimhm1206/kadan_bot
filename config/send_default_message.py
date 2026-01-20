@@ -70,9 +70,22 @@ async def send_default_message(bot: discord.Bot, guild_id: int = None,
 async def _delete_bot_messages(channel: discord.TextChannel):
     """최근 50개 메시지 중 봇이 보낸 메시지만 삭제"""
     try:
-        async for msg in channel.history(limit=50):
-            if msg.author.bot:
+        pinned = []
+        try:
+            pinned = await channel.pins()
+        except Exception:
+            pinned = []
+
+        deleted_ids = set()
+        for msg in pinned:
+            if msg.author.bot and msg.id not in deleted_ids:
                 await msg.delete()
+                deleted_ids.add(msg.id)
+
+        async for msg in channel.history(limit=50):
+            if msg.author.bot and msg.id not in deleted_ids:
+                await msg.delete()
+                deleted_ids.add(msg.id)
     except Exception as e:
         print(f"⚠️ 메시지 삭제 실패: {e}")
 

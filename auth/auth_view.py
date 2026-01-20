@@ -226,7 +226,7 @@ class RepChangeConfirmView(discord.ui.View):
             reason, details = result
             if reason == "blocked":
                 # ✅ 차단된 경우 → 재차 차단 등록 후 티켓 채널 생성
-                from utils.function import block_user, get_user_blocked
+                from utils.function import block_user, get_user_blocked, get_conn
                 from block.block_commands import broadcast_block_log
 
                 auto_reason = "차단 인증 시도(봇자동탐지)"
@@ -248,6 +248,29 @@ class RepChangeConfirmView(discord.ui.View):
                         bot_user_id,
                         extra_values=extra_values,
                     )
+
+                    if new_blocks:
+                        with get_conn() as conn, conn.cursor() as cur:
+                            for dtype, value in new_blocks:
+                                cur.execute(
+                                    """
+                                    SELECT id
+                                    FROM blocked_users
+                                    WHERE guild_id = %s AND data_type = %s AND value = %s
+                                    AND unblocked_at IS NULL
+                                    ORDER BY id DESC
+                                    LIMIT 1
+                                    """,
+                                    (interaction.guild_id, dtype, str(value)),
+                                )
+                                row = cur.fetchone()
+                                if row:
+                                    row_id = row[0]
+                                    cur.execute(
+                                        "UPDATE blocked_users SET reason = %s WHERE id = %s",
+                                        (f"{auto_reason} | 자동차단={row_id}", row_id),
+                                    )
+                            conn.commit()
 
                     refreshed = get_user_blocked(
                         interaction.guild_id,

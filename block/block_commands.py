@@ -8,7 +8,6 @@ from auth.auth_logger import send_main_delete_log
 from utils.function import (
     block_user,
     delete_main_account,
-    fetch_character_list_by_nickname,
     get_setting_cached,
     get_conn,
 )
@@ -275,6 +274,153 @@ def setup(bot: discord.Bot):
 
         await ctx.followup.send("\n".join(msg), ephemeral=True)
 
+    @bot.slash_command(
+        name="차단닉네임",
+        description="로스트아크 닉네임을 기준으로 차단합니다",
+        default_member_permissions=discord.Permissions(administrator=True)
+    )
+    async def block_by_nickname(
+        ctx: discord.ApplicationContext,
+        nickname: discord.Option(str, description="차단할 로스트아크 닉네임"),
+        reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)"),
+    ):
+        await ctx.defer(ephemeral=True)
+        guild = ctx.guild
+        if not guild:
+            await ctx.followup.send("⚠️ 길드에서만 사용할 수 있는 명령입니다.", ephemeral=True)
+            return
+
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT DISTINCT discord_user_id FROM auth_accounts_{ctx.guild_id}
+                WHERE nickname = %s
+                UNION
+                SELECT DISTINCT discord_user_id FROM auth_sub_accounts_{ctx.guild_id}
+                WHERE nickname = %s
+                """,
+                (nickname, nickname),
+            )
+            discord_ids = [row[0] for row in cur.fetchall() if row[0]]
+
+        if not discord_ids:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1 FROM blocked_users
+                    WHERE guild_id = %s AND data_type = 'nickname' AND value = %s
+                    AND unblocked_at IS NULL
+                    """,
+                    (ctx.guild_id, nickname),
+                )
+                already_blocked = cur.fetchone() is not None
+
+                if already_blocked:
+                    await ctx.followup.send(
+                        f"⚠️ 닉네임 `{nickname}` 은(는) 이미 차단되어 있습니다.",
+                        ephemeral=True,
+                    )
+                    return
+
+                cur.execute(
+                    """
+                    INSERT INTO blocked_users
+                        (guild_id, data_type, value, reason, created_at, blocked_by)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (ctx.guild_id, "nickname", nickname, reason, datetime.utcnow(), ctx.user.id),
+                )
+                conn.commit()
+
+            await broadcast_block_log(
+                bot,
+                blocked_gid=ctx.guild_id,
+                target_user=None,
+                raw_user_id=None,
+                new_blocks=[("nickname", nickname)],
+                reason=reason,
+                blocked_by=ctx.user.id,
+            )
+            await ctx.followup.send(
+                f"✅ 닉네임 `{nickname}` 을(를) 차단했습니다.",
+                ephemeral=True,
+            )
+            return
+
+        msg = [f"🚫 닉네임 `{nickname}` 에 연결된 계정 처리 결과:"]
+
+        for discord_id in discord_ids:
+            new_blocks, already_blocked = block_user(ctx.guild_id, discord_id, reason, ctx.user.id)
+
+            msg.append(f"- <@{discord_id}>")
+            if new_blocks:
+                msg.append("  ✅ 새로 차단된 정보:")
+                for dtype, val in new_blocks:
+                    msg.append(f"  - {dtype}: `{val}`")
+            if already_blocked:
+                msg.append("  ⚠️ 이미 차단된 정보:")
+                for dtype, val in already_blocked:
+                    msg.append(f"  - {dtype}: `{val}`")
+
+            if new_blocks:
+                member = guild.get_member(discord_id)
+                main_nick, sub_list = delete_main_account(ctx.guild_id, discord_id)
+                kick_success = False
+
+                if member:
+                    for key in ("main_auth_role", "sub_auth_role"):
+                        role_id = get_setting_cached(ctx.guild_id, key)
+                        if role_id:
+                            role = guild.get_role(int(role_id))
+                            if role:
+                                try:
+                                    await member.remove_roles(role)
+                                except discord.Forbidden:
+                                    pass
+
+                    try:
+                        await member.edit(nick=None)
+                    except discord.Forbidden:
+                        pass
+
+                    cleaned_channels, cleaned_messages = await purge_user_messages(guild, member.id)
+
+                    try:
+                        await member.kick(reason=f"차단 조치: {reason}")
+                        kick_success = True
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
+                else:
+                    cleaned_channels, cleaned_messages = (0, 0)
+
+                if cleaned_channels or cleaned_messages:
+                    msg.append(
+                        f"  🧹 메시지 삭제: {cleaned_channels}개 채널에서 {cleaned_messages}개 메시지 삭제"
+                    )
+
+                if kick_success:
+                    msg.append(f"  🚪 <@{discord_id}> 서버에서 추방 완료")
+
+                await broadcast_block_log(
+                    bot,
+                    blocked_gid=ctx.guild_id,
+                    target_user=member,
+                    raw_user_id=discord_id,
+                    new_blocks=new_blocks,
+                    reason=reason,
+                    blocked_by=ctx.user.id,
+                )
+
+                await send_main_delete_log(
+                    ctx.bot,
+                    ctx.guild_id,
+                    member or discord_id,
+                    main_nick,
+                    sub_list,
+                )
+
+        await ctx.followup.send("\n".join(msg), ephemeral=True)
+
 
 
 async def broadcast_block_log(
@@ -346,195 +492,3 @@ async def broadcast_block_log(
             await channel.send(embed=embed)
         except Exception:
             continue
-        
-        
-        
-        
-        
-        
-        
-        
-        
-    # 3) /차단닉네임
-    @bot.slash_command(
-        name="차단닉네임",
-        description="로스트아크 닉네임을 기준으로 차단합니다",
-        default_member_permissions=discord.Permissions(administrator=True)
-    )
-    async def block_by_nickname(
-        ctx: discord.ApplicationContext,
-        nickname: discord.Option(str, description="차단할 로스트아크 닉네임"),
-        reason: discord.Option(str, description="차단 사유 & 차단자 ex:(카단,주우자악8)"),
-        ban_member: discord.Option(
-            str,
-            description="서버에서 추방까지 수행할지 선택 (기본: X)",
-            required=False,
-            choices=["O", "X"],
-            default="X",
-        ),
-    ):
-        await ctx.defer(ephemeral=True)
-        guild = ctx.guild
-        if not guild:
-            await ctx.followup.send("⚠️ 길드에서만 사용할 수 있는 명령입니다.", ephemeral=True)
-            return
-
-        characters = await fetch_character_list_by_nickname(nickname)
-        if not characters:
-            await ctx.followup.send("⚠️ 해당 닉네임으로 캐릭터 정보를 찾을 수 없습니다.", ephemeral=True)
-            return
-
-        nickname_set = {c.get("CharacterName") for c in characters if c.get("CharacterName")}
-        extra_values = [("nickname", n) for n in nickname_set if n and n != nickname]
-
-        # 🔎 닉네임으로 조회된 모든 캐릭터의 memberNo를 역추적하여 연결된 디스코드/부계정까지 차단 대상에 포함
-        member_nos: set[str] = set()
-        for char in characters:
-            member_no = char.get("MemberNo") or char.get("memberNo")
-            if member_no:
-                member_nos.add(str(member_no))
-
-        # memberNo 기준으로 본/부계정 테이블에서 연결된 discord_id와 stove_member_no, nickname을 수집
-        with get_conn() as conn, conn.cursor() as cur:
-            for member_no in member_nos:
-                extra_values.append(("memberNo", member_no))
-
-                for table in (
-                    f"auth_accounts_{ctx.guild_id}",
-                    f"deleted_auth_accounts_{ctx.guild_id}",
-                    f"auth_sub_accounts_{ctx.guild_id}",
-                    f"deleted_auth_sub_accounts_{ctx.guild_id}",
-                ):
-                    cur.execute(
-                        f"SELECT discord_user_id, stove_member_no, nickname FROM {table} WHERE stove_member_no = %s",
-                        (member_no,),
-                    )
-                    for did, stove_no, nick in cur.fetchall():
-                        if did:
-                            extra_values.append(("discord_id", str(did)))
-                        if stove_no:
-                            extra_values.append(("memberNo", stove_no))
-                        if nick:
-                            extra_values.append(("nickname", nick))
-
-        new_blocks, already_blocked = block_user(
-            ctx.guild_id,
-            nickname,
-            reason,
-            ctx.user.id,
-            extra_values=extra_values,
-        )
-
-        ban_requested = ban_member == "O"
-        msg = [f"🚫 닉네임 `{nickname}` 처리 결과:"]
-        if new_blocks:
-            msg.append("✅ 새로 차단된 정보:")
-            for dtype, val in new_blocks:
-                msg.append(f"- {dtype}: `{val}`")
-        if already_blocked:
-            msg.append("⚠️ 이미 차단된 정보:")
-            for dtype, val in already_blocked:
-                msg.append(f"- {dtype}: `{val}`")
-
-        cleaned_report: list[str] = []
-        processed_users: set[int] = set()
-
-        for dtype, val in new_blocks:
-            if dtype == "discord_id":
-                try:
-                    processed_users.add(int(val))
-                except ValueError:
-                    continue
-
-        for user_id in processed_users:
-            member = guild.get_member(user_id)
-            main_nick, sub_list = delete_main_account(ctx.guild_id, user_id)
-            kick_success = False
-
-            if member:
-                for key in ("main_auth_role", "sub_auth_role"):
-                    role_id = get_setting_cached(ctx.guild_id, key)
-                    if role_id:
-                        role = guild.get_role(int(role_id))
-                        if role:
-                            try:
-                                await member.remove_roles(role)
-                            except discord.Forbidden:
-                                pass
-                try:
-                    await member.edit(nick=None)
-                except discord.Forbidden:
-                    pass
-
-                cleaned_channels, cleaned_messages = await purge_user_messages(guild, member.id)
-
-                try:
-                    await member.kick(reason=f"차단 조치: {reason}")
-                    kick_success = True
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
-            else:
-                cleaned_channels, cleaned_messages = (0, 0)
-
-            if cleaned_channels or cleaned_messages:
-                cleaned_report.append(
-                    f"🧹 <@{user_id}>: {cleaned_channels}개 채널에서 {cleaned_messages}개 메시지 삭제"
-                )
-
-            if kick_success:
-                cleaned_report.append(f"🚪 <@{user_id}> 서버에서 추방 완료")
-
-            if ban_requested:
-                try:
-                    await guild.ban(member or discord.Object(id=user_id), reason=f"차단 조치: {reason}", delete_message_days=0)
-                    cleaned_report.append("⛔ 서버 밴 처리 완료")
-                except (discord.Forbidden, discord.HTTPException):
-                    cleaned_report.append("⚠️ 서버 밴 처리 실패(권한 확인 필요)")
-
-            await send_main_delete_log(
-                ctx.bot,
-                ctx.guild_id,
-                member or user_id,
-                main_nick,
-                sub_list,
-            )
-
-        if cleaned_report:
-            msg.extend(cleaned_report)
-
-        if new_blocks:
-            if processed_users:
-                for discord_id in processed_users:
-                    target_member = guild.get_member(discord_id)
-                    filtered_blocks = []
-                    for item in new_blocks:
-                        dtype, value = item
-                        if dtype != "discord_id":
-                            filtered_blocks.append(item)
-                            continue
-                        try:
-                            if int(value) == discord_id:
-                                filtered_blocks.append(item)
-                        except ValueError:
-                            filtered_blocks.append(item)
-                    await broadcast_block_log(
-                        bot,
-                        blocked_gid=ctx.guild_id,
-                        target_user=target_member,
-                        raw_user_id=discord_id,
-                        new_blocks=filtered_blocks or new_blocks,
-                        reason=reason,
-                        blocked_by=ctx.user.id,
-                    )
-            else:
-                await broadcast_block_log(
-                    bot,
-                    blocked_gid=ctx.guild_id,
-                    target_user=None,
-                    raw_user_id=None,
-                    new_blocks=new_blocks,
-                    reason=reason,
-                    blocked_by=ctx.user.id,
-                )
-
-        await ctx.followup.send("\n".join(msg), ephemeral=True)

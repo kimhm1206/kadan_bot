@@ -22,13 +22,13 @@ async def on_ready():
     from config.send_default_message import send_default_message
 
     # ✅ DB → 캐시 초기화 (settings + server 값까지)
+    all_settings = get_all_settings()
     settings_cache.clear()
-    settings_cache.update(get_all_settings())
-    # print(settings_cache)
+    settings_cache.update(all_settings)
 
     # ✅ 길드별 관리자 패널 재전송
     for guild in bot.guilds:
-        guild_cache = settings_cache.get(guild.id, {})
+        guild_cache = all_settings.get(guild.id, {})
         admin_channel_id = guild_cache.get("admin_channel")
         
         if admin_channel_id and admin_channel_id.isdigit():
@@ -52,14 +52,23 @@ async def on_ready():
             
     await send_default_message(bot)
     await bot.sync_commands()
-# --------------------
-# Cog/Commands 등록
-# --------------------
-def load_extensions():
+
+@bot.event
+async def on_member_remove(member: discord.Member):
+    from utils.function import delete_main_account
+    from auth.auth_logger import send_main_delete_log
+
+    main_nick, sub_list = delete_main_account(member.guild.id, member.id)
+    if not main_nick and not sub_list:
+        return
+
+    await send_main_delete_log(bot, member.guild.id, member, main_nick, sub_list)
+
+def load_extensions(target_bot: discord.Bot):
     # 설정 관련 명령어 등록
-    bot.load_extension("config.config_commands")
-    bot.load_extension("block.block_commands")
-    bot.load_extension("utils.commands")
+    target_bot.load_extension("config.config_commands")
+    target_bot.load_extension("block.block_commands")
+    target_bot.load_extension("utils.commands")
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Kadan Bot 실행 옵션")
@@ -77,9 +86,9 @@ if __name__ == "__main__":
         token = os.getenv("BOT_TOKEN_TEST")
     else:
         token = os.getenv("BOT_TOKEN_PROD")
-        
+
     if token:
-        load_extensions()   # ✅ 실행 전에 명령어 불러오기
+        load_extensions(bot)   # ✅ 실행 전에 명령어 불러오기
         bot.run(token)
     else:
         print("❌ .env 파일에서 봇 토큰을 찾을 수 없습니다.")

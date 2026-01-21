@@ -304,12 +304,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
         msg += "\n\n관리자와 소통하여 이의 제기를 진행해주세요."
 
         await channel.send(
-            content=member.mention,
-            embed=discord.Embed(
-                title="🚫 차단된 사용자 인증",
-                description=msg,
-                color=discord.Color.red()
-            ),
+            content=f"{member.mention}\n{msg}",
             view=BlockTicketView(block_data)  # ✅ 기존 unblock 로직 그대로 사용
         )
 

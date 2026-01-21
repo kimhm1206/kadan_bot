@@ -1,6 +1,6 @@
 import discord
 from utils.function import get_all_settings
-from config.admin_view import AdminConfigMainView, build_admin_embed
+from utils.cache import settings_cache
 from auth.auth_view import AuthMainView
 from auth.auth_embed import build_auth_embed
 from ticket.ticket_embed import build_ticket_panel_embed
@@ -21,7 +21,9 @@ async def send_default_message(bot: discord.Bot, guild_id: int = None,
 
     # 1️⃣ 봇 첫 실행 시: 모든 길드 전체 처리
     if guild_id is None:
-        all_settings = get_all_settings()
+        all_settings = settings_cache or get_all_settings()
+        if not settings_cache:
+            settings_cache.update(all_settings)
 
         for g in bot.guilds:
             settings = all_settings.get(g.id, {})
@@ -70,9 +72,22 @@ async def send_default_message(bot: discord.Bot, guild_id: int = None,
 async def _delete_bot_messages(channel: discord.TextChannel):
     """최근 50개 메시지 중 봇이 보낸 메시지만 삭제"""
     try:
-        async for msg in channel.history(limit=50):
-            if msg.author.bot:
+        pinned = []
+        try:
+            pinned = await channel.pins()
+        except Exception:
+            pinned = []
+
+        deleted_ids = set()
+        for msg in pinned:
+            if msg.author.bot and msg.id not in deleted_ids:
                 await msg.delete()
+                deleted_ids.add(msg.id)
+
+        async for msg in channel.history(limit=50):
+            if msg.author.bot and msg.id not in deleted_ids:
+                await msg.delete()
+                deleted_ids.add(msg.id)
     except Exception as e:
         print(f"⚠️ 메시지 삭제 실패: {e}")
 

@@ -1,6 +1,6 @@
 import discord
 from utils.function import approve_guild, reject_guild
-from config.admin_embed import build_admin_embed
+from config.admin_embed import build_admin_commands_embed, build_admin_embed
 
 class ServerApprovalView(discord.ui.View):
     def __init__(self, bot: discord.Bot, guild_id: int, requester: int, name: str, server: str):
@@ -59,3 +59,8 @@ class AdminConfigMainView(discord.ui.View):
             extra_text="아래 셀렉트바에서 수정할 항목을 골라주세요."
         )
         await interaction.response.edit_message(embed=embed, view=AdminConfigSelectView(self.bot, self.guild_id))
+
+    @discord.ui.button(label="📖 명령어 설명", style=discord.ButtonStyle.secondary)
+    async def command_help(self, button, interaction: discord.Interaction):
+        embed = build_admin_commands_embed()
+        await interaction.response.send_message(embed=embed, ephemeral=True)

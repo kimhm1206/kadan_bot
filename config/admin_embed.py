@@ -56,3 +56,41 @@ def build_admin_embed(guild_id: int, extra_text: str = None) -> discord.Embed:
         )
 
     return embed
+
+
+def build_admin_commands_embed() -> discord.Embed:
+    embed = discord.Embed(
+        title="📖 관리자 명령어 안내",
+        description="관리자 전용 명령어 사용법입니다. 필요한 명령어를 확인해 주세요.",
+        color=discord.Color.green(),
+    )
+
+    embed.add_field(
+        name="✅ 인증 관리",
+        value=(
+            "`/계정확인` : 유저 계정이 닉네임과 일치하는지 확인\n"
+            "`/인증해제` : 인증 정보 강제 삭제 (discord_id/member/stove_member_no)\n"
+            "`/인증정리` : 서버에 없는 인증 기록 정리\n"
+            "`/인증검색` : 인증 기록 조회 (discord_id/nickname/stove_member_no)"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="🚫 차단 관리",
+        value=(
+            "`/차단id` : 디스코드 ID로 차단\n"
+            "`/차단맴버` : 서버 멤버 선택 차단\n"
+            "`/차단닉네임` : 로스트아크 닉네임 기준 차단"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="🧾 문의 관리",
+        value="`/문의삭제` : 문의 채널 로그 저장 후 삭제",
+        inline=False,
+    )
+
+    embed.set_footer(text="※ /서버등록, /관리자채널 명령어는 별도 설정용입니다.")
+    return embed

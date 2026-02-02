@@ -732,6 +732,11 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 target_mentions = []
                 for discord_id in self.discord_ids:
                     target = guild.get_member(discord_id)
+                    if target is None:
+                        try:
+                            target = await guild.fetch_member(discord_id)
+                        except discord.NotFound:
+                            target = None
                     if target:
                         target_mentions.append(target.mention)
                         await channel.set_permissions(

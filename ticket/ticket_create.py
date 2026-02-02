@@ -208,6 +208,37 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
         color=discord.Color.blue()
     )
 
+    async def close_ticket_message(message: discord.Message, allow_delete: bool = True):
+        await channel.edit(name=f"종료된-{channel.name}")
+        await channel.set_permissions(member, view_channel=False)
+
+        description = (
+            "🔒 이 문의는 종료되었습니다.\n\n"
+            "📌 메모를 남긴 뒤 아래 버튼으로 채널을 삭제할 수 있습니다. \n"
+            "마지막 20개의 메시지만 로그에 남습니다."
+        )
+        if not allow_delete:
+            description = "🔒 이 문의는 종료되었습니다."
+
+        delete_view = TicketDeleteView(member, ticket_type, log_channel) if allow_delete else None
+        await message.edit(
+            embed=discord.Embed(
+                title=f"{icon} {ticket_type} 티켓 종료됨",
+                description=description,
+                color=discord.Color.red(),
+            ),
+            view=delete_view,
+        )
+
+    async def close_ticket(interaction: discord.Interaction, allow_delete: bool = True):
+        # 관리자 또는 개설자만 닫기 가능
+        if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⚠️ 이 티켓을 닫을 권한이 없습니다.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("⏳ 티켓이 종료되었습니다.", ephemeral=True)
+        await close_ticket_message(interaction.message, allow_delete=allow_delete)
+
     # 🔹 닫기/삭제 버튼 뷰
     class TicketControlView(discord.ui.View):
         def __init__(self):
@@ -215,25 +246,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
         @discord.ui.button(label="티켓 종료", style=discord.ButtonStyle.danger, emoji="❌")
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
-            # 관리자 또는 개설자만 닫기 가능
-            if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message("⚠️ 이 티켓을 닫을 권한이 없습니다.", ephemeral=True)
-                return
-
-            await interaction.response.send_message("⏳ 티켓이 종료되었습니다.", ephemeral=True)
-            await channel.edit(name=f"종료된-{channel.name}")
-            await channel.set_permissions(member, view_channel=False)
-
-            # 기존 메시지 edit → 삭제 버튼만 남김
-            delete_view = TicketDeleteView(member, ticket_type, log_channel)
-            await interaction.message.edit(
-                embed=discord.Embed(
-                    title=f"{icon} {ticket_type} 티켓 종료됨",
-                    description="🔒 이 문의는 종료되었습니다.\n\n📌 메모를 남긴 뒤 아래 버튼으로 채널을 삭제할 수 있습니다. \n마지막 20개의 메시지만 로그에 남습니다.",
-                    color=discord.Color.red()
-                ),
-                view=delete_view
-            )
+            await close_ticket(interaction)
 
     class TicketDeleteView(discord.ui.View):
         def __init__(self, ticket_owner: discord.Member, t_type: str, log_ch: discord.TextChannel):
@@ -277,7 +290,194 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
 
     # ✅ 기본 임베드 + 컨트롤 뷰 전송
-    await channel.send(content=member.mention, embed=embed, view=TicketControlView())
+    if ticket_type in ["문의", "인증"]:
+        await channel.set_permissions(member, send_messages=False)
+
+        chatbot_embed = discord.Embed(
+            title=f"{icon} {ticket_type} 안내",
+            description=(
+                f"{member.mention} 님, 관리자와 소통하기 전에 먼저 챗봇과 대화해 주세요.\n"
+                "아래 버튼을 눌러 진행할 항목을 선택해 주세요."
+            ),
+            color=discord.Color.blurple(),
+        )
+
+        inquiry_embed = discord.Embed(
+            title=f"{icon} 문의 접수 안내",
+            description=(
+                f"{member.mention} 님, 아래에 문의 내용을 작성해 주세요.\n\n"
+                "서로 존중하는 태도로 예쁘게 이야기해 주세요. 🙏\n"
+                "❌ 문의 사항 종료 시 아래 버튼을 눌러 티켓을 종료할 수 있습니다."
+            ),
+            color=discord.Color.blue(),
+        )
+
+        auth_embed = discord.Embed(
+            title="🔑 인증 관련 안내",
+            description=(
+                "5분 동안 아무 작업이 없을 경우 자동 종료됩니다.\n\n"
+                "아래 항목 중 해당되는 버튼을 선택해 주세요.\n"
+                "1. 마이페이지 프로필 주소가 올바르지 않다고 떠요.\n"
+                "2. 대표캐릭터를 어디서 바꿔야하는지 모르겠어요.\n"
+                "3. 대표캐릭터는 다른걸로하고싶은데 안바꾸는 방법은 없나요?\n"
+                "4. 봇이 대표로 바꾸라는 캐릭터는 1660 이하인캐릭터인데 문제 없나요?\n"
+                "5. 계정을 구매 및 양도 받았는데 중복인증이라고 인증이 안되고 있어요.\n"
+                "6. 디스코드 계정을 새로 만들어서 인증하고 싶어요."
+            ),
+            color=discord.Color.purple(),
+        )
+
+        auth_tip_text = (
+            "아래 영상을 보고 제시도 해주세요.\n"
+            "제시도 후에도 안될 시 봇이 응답하는 화면을 캡쳐해서 올려주신 후 "
+            "관리자에게 문의하기 버튼을 눌러주세요."
+        )
+
+        async def auto_close_and_delete():
+            await archive_ticket_channel(
+                channel=channel,
+                deleter=guild.me,
+                log_channel=log_channel,
+                ticket_type=ticket_type,
+                owner_label=member.mention,
+            )
+
+        timeout_task: asyncio.Task | None = None
+
+        async def schedule_timeout(action: str):
+            nonlocal timeout_task
+            if timeout_task and not timeout_task.done():
+                timeout_task.cancel()
+
+            async def _timeout():
+                try:
+                    await asyncio.sleep(300)
+                except asyncio.CancelledError:
+                    return
+
+                if action == "delete":
+                    await auto_close_and_delete()
+                elif action == "close":
+                    await close_ticket_message(chatbot_message, allow_delete=False)
+
+            timeout_task = asyncio.create_task(_timeout())
+
+        class TicketChatbotView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=None)
+
+            @discord.ui.button(label="인증 관련", style=discord.ButtonStyle.primary, emoji="🔑")
+            async def auth_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                await interaction.response.edit_message(embed=auth_embed, view=TicketAuthView())
+
+            @discord.ui.button(label="인증이 아닌 다른 문의", style=discord.ButtonStyle.success, emoji="💬")
+            async def other_inquiry_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
+                    await interaction.response.send_message("⚠️ 요청자만 사용할 수 있습니다.", ephemeral=True)
+                    return
+
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+
+                await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+                await interaction.response.edit_message(embed=inquiry_embed, view=TicketControlView())
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction)
+
+        class TicketAuthView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=None)
+
+            async def _reset_timeout(self):
+                await schedule_timeout("close")
+
+            async def _send_video_response(self, interaction: discord.Interaction, url: str):
+                await self._reset_timeout()
+                video_embed = discord.Embed(
+                    title="📹 인증 도움 영상",
+                    description=f"{auth_tip_text}\n\n영상 링크: {url}",
+                    color=discord.Color.blurple(),
+                )
+                video_embed.set_footer(text="필요 시 관리자에게 문의를 이어주세요.")
+                await interaction.response.edit_message(embed=video_embed, view=TicketAuthResponseView(url))
+
+            @discord.ui.button(label="1번", style=discord.ButtonStyle.primary, row=0)
+            async def option_one(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await self._send_video_response(
+                    interaction,
+                    "https://cdn.discordapp.com/attachments/1467748338328670229/1467748552758263901/b6979124805680fd.mp4?ex=698182dc&is=6980315c&hm=a7072ddf9bc547553a090d5b56512cf234e56e8ff17007bbd06e6346f89b9c32&",
+                )
+
+            @discord.ui.button(label="2번", style=discord.ButtonStyle.primary, row=0)
+            async def option_two(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await self._send_video_response(
+                    interaction,
+                    "https://cdn.discordapp.com/attachments/1467748338328670229/1467748551147651102/15e7b960aa938d11.mp4?ex=698182dc&is=6980315c&hm=90d5e6048058f161dcee7e6948f9cca38d6053b85c994260dac0f009ba7ddc66&",
+                )
+
+            @discord.ui.button(label="3번", style=discord.ButtonStyle.secondary, row=0)
+            async def option_three(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await self._reset_timeout()
+                await interaction.response.send_message("✅ 확인했습니다. 추가 안내 준비 중입니다.", ephemeral=True)
+
+            @discord.ui.button(label="4번", style=discord.ButtonStyle.secondary, row=1)
+            async def option_four(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await self._reset_timeout()
+                await interaction.response.send_message("✅ 확인했습니다. 추가 안내 준비 중입니다.", ephemeral=True)
+
+            @discord.ui.button(label="5번", style=discord.ButtonStyle.secondary, row=1)
+            async def option_five(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await self._reset_timeout()
+                await interaction.response.send_message("✅ 확인했습니다. 추가 안내 준비 중입니다.", ephemeral=True)
+
+            @discord.ui.button(label="6번", style=discord.ButtonStyle.secondary, row=1)
+            async def option_six(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await self._reset_timeout()
+                await interaction.response.send_message("✅ 확인했습니다. 추가 안내 준비 중입니다.", ephemeral=True)
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌", row=2)
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction, allow_delete=False)
+
+        class TicketAuthResponseView(discord.ui.View):
+            def __init__(self, url: str):
+                super().__init__(timeout=None)
+                self.url = url
+
+            @discord.ui.button(label="뒤로가기", style=discord.ButtonStyle.secondary, emoji="↩️")
+            async def back_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                await interaction.response.edit_message(embed=auth_embed, view=TicketAuthView())
+
+            @discord.ui.button(label="관리자에게 문의하기", style=discord.ButtonStyle.success, emoji="💬")
+            async def contact_admin(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
+                    await interaction.response.send_message("⚠️ 요청자만 사용할 수 있습니다.", ephemeral=True)
+                    return
+
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+
+                await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+                await interaction.response.edit_message(embed=inquiry_embed, view=TicketControlView())
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction, allow_delete=False)
+
+        chatbot_message = await channel.send(content=member.mention, embed=chatbot_embed, view=TicketChatbotView())
+        await schedule_timeout("delete")
+    else:
+        await channel.send(content=member.mention, embed=embed, view=TicketControlView())
 
     # ✅ 차단 타입일 경우 추가 임베드/뷰
     if ticket_type == "차단" and block_data:

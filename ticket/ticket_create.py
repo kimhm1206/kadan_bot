@@ -296,31 +296,47 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
         await channel.set_permissions(member, send_messages=False)
 
         chatbot_embed = discord.Embed(
-            title=f"{icon} {ticket_type} 안내",
-            description=(
-                f"**{member.mention} 님, 관리자와 소통하기 전에 먼저 챗봇과 대화해 주세요.**\n"
-                "아래 버튼을 눌러 진행할 항목을 선택해 주세요. ✨"
-            ),
+            title=f"{icon} {ticket_type} 시작 안내",
+            description=f"**{member.mention} 님, 먼저 챗봇과 대화해 주세요.**",
             color=discord.Color.blurple(),
+        )
+        chatbot_embed.add_field(
+            name="🧭 진행 방법",
+            value=(
+                "아래 버튼을 눌러 문의 유형을 선택해 주세요.\n"
+                "선택 후에 필요한 안내를 바로 제공해드립니다."
+            ),
+            inline=False,
+        )
+        chatbot_embed.add_field(
+            name="⏱️ 유의사항",
+            value="5분 동안 아무 작업이 없으면 자동 종료됩니다.",
+            inline=False,
         )
 
         inquiry_embed = discord.Embed(
             title=f"{icon} 문의 접수 안내",
             description=(
-                f"**{member.mention} 님, 아래에 문의 내용을 작성해 주세요.**\n\n"
-                "💬 서로 존중하는 태도로 예쁘게 이야기해 주세요. 🙏\n"
-                "❌ 문의 사항 종료 시 아래 버튼을 눌러 티켓을 종료할 수 있습니다."
+                f"**{member.mention} 님, 아래에 문의 내용을 작성해 주세요.**"
             ),
             color=discord.Color.blue(),
+        )
+        inquiry_embed.add_field(
+            name="💬 안내",
+            value=(
+                "서로 존중하는 태도로 예쁘게 이야기해 주세요. 🙏\n"
+                "문의가 끝나면 **문의 종료** 버튼으로 티켓을 종료할 수 있습니다."
+            ),
+            inline=False,
         )
 
         auth_embed = discord.Embed(
             title="🔑 인증 관련 도움 센터",
-            description="**⏱️ 5분 동안 아무 작업이 없을 경우 자동 종료됩니다.**",
+            description="원하시는 항목을 선택해 주세요.",
             color=discord.Color.purple(),
         )
         auth_embed.add_field(
-            name="📌 아래 항목 중 선택해 주세요",
+            name="📌 자주 묻는 질문",
             value=(
                 "1️⃣ 마이페이지 프로필 주소가 올바르지 않다고 떠요.\n"
                 "2️⃣ 대표캐릭터를 어디서 바꿔야하는지 모르겠어요.\n"
@@ -331,12 +347,17 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
             ),
             inline=False,
         )
+        auth_embed.add_field(
+            name="⏱️ 자동 종료 안내",
+            value="5분 동안 아무 작업이 없을 경우 자동 종료됩니다.",
+            inline=False,
+        )
         auth_embed.set_footer(text="필요 시 관리자에게 문의하기 버튼으로 이동하세요.")
 
         auth_tip_text = (
-            "🎬 아래 영상을 보고 제시도 해주세요.\n"
-            "제시도 후에도 안될 시 **봇이 응답하는 화면을 캡쳐해서 올려주신 후** "
-            "관리자에게 문의하기 버튼을 눌러 캡쳐본을 전송해주세요.\n\n"
+            "1) 아래 영상을 보고 제시도 해주세요.\n"
+            "2) 제시도 후에도 안될 시 **봇이 응답하는 화면을 캡쳐**해 주세요.\n"
+            "3) **관리자에게 문의하기** 버튼을 눌러 캡쳐본을 전송해주세요.\n\n"
             "📎 **캡쳐본이 없으면 관리자가 확인 후 문의를 종료합니다.**"
         )
 
@@ -470,12 +491,14 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 )
                 video_embed = discord.Embed(
                     title="📹 인증 도움 영상",
-                    description=(
-                        f"**질문**\n{question_label}\n\n"
-                        f"**답변**\n{auth_tip_text}\n\n"
-                        "✅ 영상 링크는 아래 메시지에서 확인해주세요."
-                    ),
                     color=discord.Color.blurple(),
+                )
+                video_embed.add_field(name="🧾 질문", value=question_label, inline=False)
+                video_embed.add_field(name="✅ 답변", value=auth_tip_text, inline=False)
+                video_embed.add_field(
+                    name="🔗 영상 확인",
+                    value="아래 메시지에서 영상을 확인해 주세요.",
+                    inline=False,
                 )
                 video_embed.set_footer(text="필요 시 관리자에게 문의를 이어주세요.")
                 await interaction.response.edit_message(embed=video_embed, view=TicketAuthResponseView(url))
@@ -500,68 +523,80 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
             @discord.ui.button(label="3번", style=discord.ButtonStyle.secondary, row=0)
             async def option_three(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
-                text_embed = discord.Embed(
-                    title="✅ 인증 안내",
-                    description=(
-                        "**질문**\n"
-                        "3️⃣ 대표캐릭터는 다른걸로하고싶은데 안바꾸는 방법은 없나요?\n\n"
-                        "**답변**\n"
+                text_embed = discord.Embed(title="✅ 인증 안내", color=discord.Color.blurple())
+                text_embed.add_field(
+                    name="🧾 질문",
+                    value="3️⃣ 대표캐릭터는 다른걸로하고싶은데 안바꾸는 방법은 없나요?",
+                    inline=False,
+                )
+                text_embed.add_field(
+                    name="✅ 답변",
+                    value=(
                         "인증 과정에서 바꾸는 대표캐릭터는 계정 소유 확인용으로만 이용됩니다. "
                         "인증 완료 후 아무캐릭터로나 바꾸셔도 상관없습니다.\n"
                         "또한 인증 완료 후 디스코드에서 사용할 대표캐릭터를 선택하는 화면이 나오니 "
                         "인증 절차에 따라주시면 됩니다."
                     ),
-                    color=discord.Color.blurple(),
+                    inline=False,
                 )
                 await interaction.response.edit_message(embed=text_embed, view=TicketAuthTextView())
 
             @discord.ui.button(label="4번", style=discord.ButtonStyle.secondary, row=1)
             async def option_four(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
-                text_embed = discord.Embed(
-                    title="✅ 인증 안내",
-                    description=(
-                        "**질문**\n"
-                        "4️⃣ 봇이 대표로 바꾸라는 캐릭터는 1660 이하인캐릭터인데 문제 없나요?\n\n"
-                        "**답변**\n"
+                text_embed = discord.Embed(title="✅ 인증 안내", color=discord.Color.blurple())
+                text_embed.add_field(
+                    name="🧾 질문",
+                    value="4️⃣ 봇이 대표로 바꾸라는 캐릭터는 1660 이하인캐릭터인데 문제 없나요?",
+                    inline=False,
+                )
+                text_embed.add_field(
+                    name="✅ 답변",
+                    value=(
                         "인증 과정에서 바꾸는 대표캐릭터는 계정 소유 확인용으로만 이용됩니다. "
                         "원정대 내 지정된 레벨 이상의 캐릭터가 하나라도 존재하면, 문제 없이 인증 가능합니다.\n"
                         "또한 인증 완료 후 디스코드에서 사용할 대표캐릭터를 선택하는 화면이 나오니 "
                         "인증 절차에 따라주시면 됩니다."
                     ),
-                    color=discord.Color.blurple(),
+                    inline=False,
                 )
                 await interaction.response.edit_message(embed=text_embed, view=TicketAuthTextView())
 
             @discord.ui.button(label="5번", style=discord.ButtonStyle.secondary, row=1)
             async def option_five(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
-                embed = discord.Embed(
-                    title="🧾 인증 안내",
-                    description=(
-                        "**질문**\n"
-                        "5️⃣ 계정을 구매 및 양도 받았는데 중복인증이라고 인증이 안되고 있어요.\n\n"
-                        "**답변**\n"
+                embed = discord.Embed(title="🧾 인증 안내", color=discord.Color.blurple())
+                embed.add_field(
+                    name="🧾 질문",
+                    value="5️⃣ 계정을 구매 및 양도 받았는데 중복인증이라고 인증이 안되고 있어요.",
+                    inline=False,
+                )
+                embed.add_field(
+                    name="✅ 답변",
+                    value=(
                         "우선 기존 인증을 조회합니다.\n"
                         "아래 버튼을 눌러 인증 시 사용되는 마이페이지 링크를 입력해주세요."
                     ),
-                    color=discord.Color.blurple(),
+                    inline=False,
                 )
                 await interaction.response.edit_message(embed=embed, view=TicketAuthTransferView())
 
             @discord.ui.button(label="6번", style=discord.ButtonStyle.secondary, row=1)
             async def option_six(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
-                embed = discord.Embed(
-                    title="🧾 인증 안내",
-                    description=(
-                        "**질문**\n"
-                        "6️⃣ 계정 인증 시 중복인증이라 나와요.\n\n"
-                        "**답변**\n"
+                embed = discord.Embed(title="🧾 인증 안내", color=discord.Color.blurple())
+                embed.add_field(
+                    name="🧾 질문",
+                    value="6️⃣ 계정 인증 시 중복인증이라 나와요.",
+                    inline=False,
+                )
+                embed.add_field(
+                    name="✅ 답변",
+                    value=(
                         "우선 기존 인증을 조회합니다.\n"
                         "아래 버튼을 눌러 인증 시 사용되는 마이페이지 링크를 입력해주세요."
                     ),
-                    color=discord.Color.blurple(),
+                    inline=False,
                 )
                 await interaction.response.edit_message(embed=embed, view=TicketAuthDuplicateView())
 
@@ -667,7 +702,12 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                     timeout_task.cancel()
 
                 await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
-                await channel.send(f"🔍 인증 검색 결과\n{self.result_text}")
+                result_embed = discord.Embed(
+                    title="🔍 인증 검색 결과",
+                    description=self.result_text,
+                    color=discord.Color.blurple(),
+                )
+                await channel.send(embed=result_embed)
                 await interaction.response.edit_message(
                     embed=discord.Embed(
                         title="✅ 관리자에게 문의하기",
@@ -793,7 +833,12 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                     timeout_task.cancel()
 
                 await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
-                await channel.send(f"🔍 인증 검색 결과\n{self.result_text}")
+                result_embed = discord.Embed(
+                    title="🔍 인증 검색 결과",
+                    description=self.result_text,
+                    color=discord.Color.blurple(),
+                )
+                await channel.send(embed=result_embed)
                 await interaction.response.edit_message(
                     embed=discord.Embed(
                         title="✅ 관리자에게 문의하기",
@@ -866,9 +911,10 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 result_text, discord_ids = lookup_auth_records(member_no)
                 lookup_embed = discord.Embed(
                     title="🔍 인증 검색 결과",
-                    description=f"**조회 번호:** {member_no}\n\n{result_text}",
                     color=discord.Color.blurple(),
                 )
+                lookup_embed.add_field(name="🔢 조회 번호", value=member_no, inline=False)
+                lookup_embed.add_field(name="📋 결과", value=result_text, inline=False)
 
                 if self.flow == "transfer":
                     lookup_embed.add_field(

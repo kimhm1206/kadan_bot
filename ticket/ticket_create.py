@@ -367,12 +367,8 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
         def lookup_auth_records(member_no: str) -> tuple[str, list[int]]:
             current_rows: list[tuple[int, str | None]] = []
-            deleted_rows: list[tuple[int, str | None]] = []
             table_map = [
                 (f"auth_accounts_{guild_id}", current_rows),
-                (f"auth_sub_accounts_{guild_id}", current_rows),
-                (f"deleted_auth_accounts_{guild_id}", deleted_rows),
-                (f"deleted_auth_sub_accounts_{guild_id}", deleted_rows),
             ]
             with get_conn() as conn, conn.cursor() as cur:
                 for table, target in table_map:
@@ -382,7 +378,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                     )
                     target.extend(cur.fetchall())
 
-            if not current_rows and not deleted_rows:
+            if not current_rows:
                 return "❌ 해당 번호로 인증 기록을 찾지 못했습니다.", []
 
             def build_lines(rows: list[tuple[int, str | None]], suffix: str = "") -> tuple[list[str], list[int]]:
@@ -407,14 +403,11 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 return lines, discord_ids
 
             current_lines, current_ids = build_lines(current_rows)
-            deleted_lines, _ = build_lines(deleted_rows, "(삭제됨)")
 
             result_text = "\n".join(
                 [
                     "현재 인증중 계정 -",
                     "\n".join(current_lines) if current_lines else "없음",
-                    "과거 인증 계정 -",
-                    "\n".join(deleted_lines) if deleted_lines else "없음",
                 ]
             )
             return result_text, current_ids

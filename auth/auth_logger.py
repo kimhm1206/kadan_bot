@@ -2,10 +2,31 @@ import discord
 from datetime import datetime
 from utils.function import get_setting_cached
 
+
+async def _resolve_log_member(
+    bot: discord.Bot,
+    guild_id: int,
+    user: discord.abc.User,
+) -> discord.abc.User:
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        return user
+
+    try:
+        member = await guild.fetch_member(user.id)
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        return user
+    else:
+        return member
+
+
+def _format_user_tag(user: discord.abc.User) -> str:
+    return f"{user.mention} ({user.display_name} | {user.id})"
+
 async def send_nickname_change_log(
     bot: discord.Bot,
     guild_id: int,
-    user: discord.Member,
+    user: discord.abc.User,
     old_nick: str | None,
     new_nick: str
 ):
@@ -19,12 +40,13 @@ async def send_nickname_change_log(
     channel = bot.get_channel(int(log_channel_id))
     if not channel:
         return
+    user = await _resolve_log_member(bot, guild_id, user)
 
     now = datetime.now().strftime("%Y-%m-%d %p %I:%M")
 
     embed = discord.Embed(
         title="✏️ 대표 캐릭터 변경 로그",
-        description=f"{user.mention} 대표 캐릭터가 변경되었습니다.",
+        description=f"{_format_user_tag(user)} 대표 캐릭터가 변경되었습니다.",
         color=0x9b59b6,
         timestamp=datetime.now()
     )
@@ -38,7 +60,7 @@ async def send_nickname_change_log(
 async def send_trade_auth_log(
     bot: discord.Bot,
     guild_id: int,
-    user: discord.Member,
+    user: discord.abc.User,
     character_name: str,
     server_name: str,
     item_level: str
@@ -53,12 +75,13 @@ async def send_trade_auth_log(
     channel = bot.get_channel(int(log_channel_id))
     if not channel:
         return
+    user = await _resolve_log_member(bot, guild_id, user)
 
     now = datetime.now().strftime("%Y-%m-%d %p %I:%M")
 
     embed = discord.Embed(
         title="✅ 거래소 인증 완료",
-        description=f"{user.mention} 님이 본계정을 인증했습니다.",
+        description=f"{_format_user_tag(user)} 님이 본계정을 인증했습니다.",
         color=0x2ecc71,
         timestamp=datetime.now()
     )
@@ -74,7 +97,7 @@ async def send_trade_auth_log(
 async def send_sub_auth_log(
     bot: discord.Bot,
     guild_id: int,
-    user: discord.Member,
+    user: discord.abc.User,
     sub_number: int,
     character_name: str,
     server_name: str,
@@ -90,6 +113,7 @@ async def send_sub_auth_log(
     channel = bot.get_channel(int(log_channel_id))
     if not channel:
         return
+    user = await _resolve_log_member(bot, guild_id, user)
 
     # 🔹 본계정 닉네임 조회
     from utils.function import get_main_account_nickname
@@ -99,7 +123,7 @@ async def send_sub_auth_log(
 
     embed = discord.Embed(
         title="📌 부계정 인증 완료",
-        description=f"{user.mention} 님이 **부계정 {sub_number}번**을 인증했습니다.",
+        description=f"{_format_user_tag(user)} 님이 **부계정 {sub_number}번**을 인증했습니다.",
         color=0x3498db,
         timestamp=datetime.now()
     )
@@ -118,7 +142,7 @@ async def send_sub_auth_log(
 async def send_account_delete_log(
     bot: discord.Bot,
     guild_id: int,
-    user: discord.Member,
+    user: discord.abc.User,
     action_text: str
 ):
     """
@@ -131,17 +155,24 @@ async def send_account_delete_log(
     channel = bot.get_channel(int(log_channel_id))
     if not channel:
         return
+    user = await _resolve_log_member(bot, guild_id, user)
 
     embed = discord.Embed(
         title="🗑️ 인증 계정 삭제 로그",
-        description=f"{user.mention} {action_text}",
+        description=f"{_format_user_tag(user)} {action_text}",
         color=0xe74c3c,
         timestamp=datetime.now()
     )
     embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     await channel.send(embed=embed)
     
-async def send_main_delete_log(bot, guild_id: int, user: discord.Member, main_nick: str | None, sub_list: list[tuple[int, str]]):
+async def send_main_delete_log(
+    bot: discord.Bot,
+    guild_id: int,
+    user: discord.abc.User,
+    main_nick: str | None,
+    sub_list: list[tuple[int, str]],
+):
     """
     본계정 + 부계정 삭제 로그
     """
@@ -151,12 +182,13 @@ async def send_main_delete_log(bot, guild_id: int, user: discord.Member, main_ni
     channel = bot.get_channel(int(log_channel_id))
     if not channel:
         return
+    user = await _resolve_log_member(bot, guild_id, user)
 
     server = get_setting_cached(guild_id, "server") or "알 수 없음"
 
     embed = discord.Embed(
         title="🗑️ 본계정 인증 취소",
-        description=f"{user.mention} 님의 \n본계정 및 모든 부계정 인증이 취소되었습니다.",
+        description=f"{_format_user_tag(user)} 님의 \n본계정 및 모든 부계정 인증이 취소되었습니다.",
         color=0xe74c3c,
         timestamp=datetime.now()
     )
@@ -174,7 +206,13 @@ async def send_main_delete_log(bot, guild_id: int, user: discord.Member, main_ni
     await channel.send(embed=embed)
 
 
-async def send_sub_delete_log(bot, guild_id: int, user: discord.Member, sub_number: int, nickname: str):
+async def send_sub_delete_log(
+    bot: discord.Bot,
+    guild_id: int,
+    user: discord.abc.User,
+    sub_number: int,
+    nickname: str,
+):
     """
     부계정 삭제 로그
     """
@@ -184,12 +222,13 @@ async def send_sub_delete_log(bot, guild_id: int, user: discord.Member, sub_numb
     channel = bot.get_channel(int(log_channel_id))
     if not channel:
         return
+    user = await _resolve_log_member(bot, guild_id, user)
 
     server = get_setting_cached(guild_id, "server") or "알 수 없음"
 
     embed = discord.Embed(
         title="📌 부계정 인증 취소",
-        description=f"{user.mention} 님의 \n{sub_number}번 부계정 인증이 취소되었습니다.",
+        description=f"{_format_user_tag(user)} 님의 \n{sub_number}번 부계정 인증이 취소되었습니다.",
         color=0xf1c40f,
         timestamp=datetime.now()
     )

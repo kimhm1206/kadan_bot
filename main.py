@@ -67,6 +67,7 @@ async def on_member_remove(member: discord.Member):
 def load_extensions(target_bot: discord.Bot):
     # 설정 관련 명령어 등록
     target_bot.load_extension("config.config_commands")
+    target_bot.load_extension("auth_commands")
     target_bot.load_extension("block.block_commands")
     target_bot.load_extension("utils.commands")
     

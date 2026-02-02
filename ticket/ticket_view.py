@@ -70,6 +70,17 @@ class TicketPanelView(discord.ui.View):
             color=discord.Color.blurple(),
         )
         await interaction.response.send_message(embed=embed, view=TicketConfirmView(interaction.user, "문의"), ephemeral=True)
+        
+    # 🔵 인증 버튼
+    @discord.ui.button(label="인증", style=discord.ButtonStyle.primary, emoji="🔑")
+    async def auth_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        icon = ICON_MAP.get("인증", "🔑")
+        embed = discord.Embed(
+            title=f"{icon} 인증 티켓 생성 확인",
+            description="정말 인증 티켓을 생성하시겠습니까?",
+            color=discord.Color.blurple(),
+        )
+        await interaction.response.send_message(embed=embed, view=TicketConfirmView(interaction.user, "인증"), ephemeral=True)
 
     # 🔴 신고 버튼
     @discord.ui.button(label="신고", style=discord.ButtonStyle.danger, emoji="🚨")
@@ -83,14 +94,5 @@ class TicketPanelView(discord.ui.View):
         await interaction.response.send_message(embed=embed, view=TicketConfirmView(interaction.user, "신고"), ephemeral=True)
 
 
-    # 🔵 인증 버튼
-    @discord.ui.button(label="인증", style=discord.ButtonStyle.primary, emoji="🔑")
-    async def auth_button(self, button: discord.ui.Button, interaction: discord.Interaction):
-        icon = ICON_MAP.get("인증", "🔑")
-        embed = discord.Embed(
-            title=f"{icon} 인증 티켓 생성 확인",
-            description="정말 인증 티켓을 생성하시겠습니까?",
-            color=discord.Color.blurple(),
-        )
-        await interaction.response.send_message(embed=embed, view=TicketConfirmView(interaction.user, "인증"), ephemeral=True)
+
 

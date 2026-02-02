@@ -21,7 +21,14 @@ async def start_auth_ticket_flow(
     ticket_control_view_factory: Callable[[], discord.ui.View],
 ) -> None:
     """인증/문의 흐름이 필요한 티켓의 상호작용을 분리 관리합니다."""
-    await channel.set_permissions(member, send_messages=False)
+    # ✅ 문의자는 채널을 볼 수 있지만, 인증 흐름 완료 전까지는 채팅만 제한합니다.
+    await channel.set_permissions(
+        member,
+        view_channel=True,
+        send_messages=False,
+        attach_files=True,
+        embed_links=True,
+    )
 
     # ✅ 챗봇 시작 안내
     chatbot_embed = discord.Embed(
@@ -187,7 +194,13 @@ async def start_auth_ticket_flow(
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
 
-            await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+            await channel.set_permissions(
+                member,
+                view_channel=True,
+                send_messages=True,
+                attach_files=True,
+                embed_links=True,
+            )
             await interaction.response.edit_message(embed=inquiry_embed, view=ticket_control_view_factory())
 
         @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
@@ -346,7 +359,13 @@ async def start_auth_ticket_flow(
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
 
-            await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+            await channel.set_permissions(
+                member,
+                view_channel=True,
+                send_messages=True,
+                attach_files=True,
+                embed_links=True,
+            )
             await interaction.response.edit_message(embed=inquiry_embed, view=ticket_control_view_factory())
 
         @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
@@ -422,7 +441,13 @@ async def start_auth_ticket_flow(
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
 
-            await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+            await channel.set_permissions(
+                member,
+                view_channel=True,
+                send_messages=True,
+                attach_files=True,
+                embed_links=True,
+            )
             result_embed = discord.Embed(
                 title="🔍 인증 검색 결과",
                 description=self.result_text,
@@ -488,7 +513,13 @@ async def start_auth_ticket_flow(
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
 
-            await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+            await channel.set_permissions(
+                member,
+                view_channel=True,
+                send_messages=True,
+                attach_files=True,
+                embed_links=True,
+            )
 
             # ✅ 기존에 인증 중인 사용자들에게 동일 채널 권한 부여
             target_mentions = []
@@ -554,7 +585,13 @@ async def start_auth_ticket_flow(
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
 
-            await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+            await channel.set_permissions(
+                member,
+                view_channel=True,
+                send_messages=True,
+                attach_files=True,
+                embed_links=True,
+            )
             result_embed = discord.Embed(
                 title="🔍 인증 검색 결과",
                 description=self.result_text,

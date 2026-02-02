@@ -1,5 +1,17 @@
 import discord
+from typing import Optional
 from . import auth_flow
+
+
+def extract_member_no_from_link(link: str) -> Optional[str]:
+    cleaned = link.strip()
+    if cleaned.startswith("http://") or cleaned.startswith("https://"):
+        cleaned = cleaned.split("://", 1)[1]
+    cleaned = cleaned.split("?", 1)[0]
+    if not cleaned.startswith("profile.onstove.com/ko/"):
+        return None
+    member_no = cleaned.split("/")[-1]
+    return member_no if member_no.isdigit() else None
 
 
 class AuthTradeModal(discord.ui.Modal):
@@ -17,9 +29,9 @@ class AuthTradeModal(discord.ui.Modal):
     async def callback(self, interaction: discord.Interaction):
         link = self.children[0].value.strip()
         # link → memberNo 추출
-        member_no = link.split("/")[-1] if link.startswith("https://profile.onstove.com/ko/") else None
+        member_no = extract_member_no_from_link(link)
 
-        if not member_no or not member_no.isdigit():
+        if not member_no:
             await interaction.response.send_message("❌ 올바른 마이페이지 링크를 입력해주세요.", ephemeral=True)
             return
 
@@ -41,9 +53,9 @@ class AuthSubModal(discord.ui.Modal):
 
     async def callback(self, interaction: discord.Interaction):
         link = self.children[0].value.strip()
-        member_no = link.split("/")[-1] if link.startswith("https://profile.onstove.com/ko/") else None
+        member_no = extract_member_no_from_link(link)
 
-        if not member_no or not member_no.isdigit():
+        if not member_no:
             await interaction.response.send_message("❌ 올바른 마이페이지 링크를 입력해주세요.", ephemeral=True)
             return
 
@@ -55,4 +67,3 @@ class AuthSubModal(discord.ui.Modal):
             return
 
         await auth_flow.start_auth(self.type, interaction, member_no)
-

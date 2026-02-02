@@ -520,7 +520,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                     "대표 캐릭터 변경 영상",
                 )
 
-            @discord.ui.button(label="3번", style=discord.ButtonStyle.secondary, row=0)
+            @discord.ui.button(label="3번", style=discord.ButtonStyle.primary, row=0)
             async def option_three(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
                 text_embed = discord.Embed(title="✅ 인증 안내", color=discord.Color.blurple())
@@ -541,7 +541,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 )
                 await interaction.response.edit_message(embed=text_embed, view=TicketAuthTextView())
 
-            @discord.ui.button(label="4번", style=discord.ButtonStyle.secondary, row=1)
+            @discord.ui.button(label="4번", style=discord.ButtonStyle.primary, row=1)
             async def option_four(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
                 text_embed = discord.Embed(title="✅ 인증 안내", color=discord.Color.blurple())
@@ -562,7 +562,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 )
                 await interaction.response.edit_message(embed=text_embed, view=TicketAuthTextView())
 
-            @discord.ui.button(label="5번", style=discord.ButtonStyle.secondary, row=1)
+            @discord.ui.button(label="5번", style=discord.ButtonStyle.primary, row=1)
             async def option_five(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
                 embed = discord.Embed(title="🧾 인증 안내", color=discord.Color.blurple())
@@ -581,7 +581,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 )
                 await interaction.response.edit_message(embed=embed, view=TicketAuthTransferView())
 
-            @discord.ui.button(label="6번", style=discord.ButtonStyle.secondary, row=1)
+            @discord.ui.button(label="6번", style=discord.ButtonStyle.primary, row=1)
             async def option_six(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
                 embed = discord.Embed(title="🧾 인증 안내", color=discord.Color.blurple())

@@ -808,23 +808,35 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                     timeout_task.cancel()
                 await close_ticket(interaction)
 
+        def extract_member_no_from_link(link: str) -> Optional[str]:
+            cleaned = link.strip()
+            if cleaned.startswith("http://") or cleaned.startswith("https://"):
+                cleaned = cleaned.split("://", 1)[1]
+            cleaned = cleaned.split("?", 1)[0]
+            if not cleaned.startswith("profile.onstove.com/ko/"):
+                return None
+            member_no = cleaned.split("/")[-1]
+            return member_no if member_no.isdigit() else None
+
         class AuthLinkModal(discord.ui.Modal):
             def __init__(self, flow: str):
                 super().__init__(title="마이페이지 링크 입력")
                 self.flow = flow
                 self.link_input = discord.ui.InputText(
                     label="마이페이지 링크",
-                    placeholder="https://...",
+                    placeholder="https://profile.onstove.com/ko/84599446",
                     style=discord.InputTextStyle.short,
                 )
                 self.add_item(self.link_input)
 
-            async def on_submit(self, interaction: discord.Interaction):
+            async def callback(self, interaction: discord.Interaction):
                 await schedule_timeout("close")
-                member_no = extract_member_no(self.link_input.value)
+                link = self.link_input.value.strip()
+                member_no = extract_member_no_from_link(link)
+
                 if not member_no:
                     await interaction.response.send_message(
-                        "⚠️ 링크에서 번호를 찾을 수 없습니다. 다시 입력해 주세요.",
+                        "❌ 올바른 마이페이지 링크를 입력해주세요.",
                         ephemeral=True,
                     )
                     return

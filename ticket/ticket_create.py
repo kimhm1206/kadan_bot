@@ -297,8 +297,8 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
         chatbot_embed = discord.Embed(
             title=f"{icon} {ticket_type} 안내",
             description=(
-                f"{member.mention} 님, 관리자와 소통하기 전에 먼저 챗봇과 대화해 주세요.\n"
-                "아래 버튼을 눌러 진행할 항목을 선택해 주세요."
+                f"**{member.mention} 님, 관리자와 소통하기 전에 먼저 챗봇과 대화해 주세요.**\n"
+                "아래 버튼을 눌러 진행할 항목을 선택해 주세요. ✨"
             ),
             color=discord.Color.blurple(),
         )
@@ -306,8 +306,8 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
         inquiry_embed = discord.Embed(
             title=f"{icon} 문의 접수 안내",
             description=(
-                f"{member.mention} 님, 아래에 문의 내용을 작성해 주세요.\n\n"
-                "서로 존중하는 태도로 예쁘게 이야기해 주세요. 🙏\n"
+                f"**{member.mention} 님, 아래에 문의 내용을 작성해 주세요.**\n\n"
+                "💬 서로 존중하는 태도로 예쁘게 이야기해 주세요. 🙏\n"
                 "❌ 문의 사항 종료 시 아래 버튼을 눌러 티켓을 종료할 수 있습니다."
             ),
             color=discord.Color.blue(),
@@ -315,27 +315,28 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
         auth_embed = discord.Embed(
             title="🔑 인증 관련 도움 센터",
-            description="5분 동안 아무 작업이 없을 경우 자동 종료됩니다.",
+            description="**⏱️ 5분 동안 아무 작업이 없을 경우 자동 종료됩니다.**",
             color=discord.Color.purple(),
         )
         auth_embed.add_field(
             name="📌 아래 항목 중 선택해 주세요",
             value=(
-                "1. 마이페이지 프로필 주소가 올바르지 않다고 떠요.\n"
-                "2. 대표캐릭터를 어디서 바꿔야하는지 모르겠어요.\n"
-                "3. 대표캐릭터는 다른걸로하고싶은데 안바꾸는 방법은 없나요?\n"
-                "4. 봇이 대표로 바꾸라는 캐릭터는 1660 이하인캐릭터인데 문제 없나요?\n"
-                "5. 계정을 구매 및 양도 받았는데 중복인증이라고 인증이 안되고 있어요.\n"
-                "6. 디스코드 계정을 새로 만들어서 인증하고 싶어요."
+                "1️⃣ 마이페이지 프로필 주소가 올바르지 않다고 떠요.\n"
+                "2️⃣ 대표캐릭터를 어디서 바꿔야하는지 모르겠어요.\n"
+                "3️⃣ 대표캐릭터는 다른걸로하고싶은데 안바꾸는 방법은 없나요?\n"
+                "4️⃣ 봇이 대표로 바꾸라는 캐릭터는 1660 이하인캐릭터인데 문제 없나요?\n"
+                "5️⃣ 계정을 구매 및 양도 받았는데 중복인증이라고 인증이 안되고 있어요.\n"
+                "6️⃣ 디스코드 계정을 새로 만들어서 인증하고 싶어요."
             ),
             inline=False,
         )
         auth_embed.set_footer(text="필요 시 관리자에게 문의하기 버튼으로 이동하세요.")
 
         auth_tip_text = (
-            "아래 영상을 보고 제시도 해주세요.\n"
-            "제시도 후에도 안될 시 봇이 응답하는 화면을 캡쳐해서 올려주신 후 "
-            "관리자에게 문의하기 버튼을 눌러주세요."
+            "🎬 아래 영상을 보고 제시도 해주세요.\n"
+            "제시도 후에도 안될 시 **봇이 응답하는 화면을 캡쳐해서 올려주신 후** "
+            "관리자에게 문의하기 버튼을 눌러 캡쳐본을 전송해주세요.\n\n"
+            "📎 **캡쳐본이 없으면 관리자가 확인 후 문의를 종료합니다.**"
         )
 
         async def auto_close_and_delete():
@@ -403,9 +404,18 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
             async def _send_video_response(self, interaction: discord.Interaction, url: str):
                 await self._reset_timeout()
+                question_label = (
+                    "1️⃣ 마이페이지 프로필 주소가 올바르지 않다고 떠요."
+                    if url.startswith("https://cdn.discordapp.com/attachments/1467748338328670229/1467748552758263901/")
+                    else "2️⃣ 대표캐릭터를 어디서 바꿔야하는지 모르겠어요."
+                )
                 video_embed = discord.Embed(
                     title="📹 인증 도움 영상",
-                    description=auth_tip_text,
+                    description=(
+                        f"**질문**\n{question_label}\n\n"
+                        f"**답변**\n{auth_tip_text}\n\n"
+                        "✅ 영상 링크는 아래 메시지에서 확인해주세요."
+                    ),
                     color=discord.Color.blurple(),
                 )
                 video_embed.set_footer(text="필요 시 관리자에게 문의를 이어주세요.")
@@ -432,6 +442,9 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 text_embed = discord.Embed(
                     title="✅ 인증 안내",
                     description=(
+                        "**질문**\n"
+                        "3️⃣ 대표캐릭터는 다른걸로하고싶은데 안바꾸는 방법은 없나요?\n\n"
+                        "**답변**\n"
                         "인증 과정에서 바꾸는 대표캐릭터는 계정 소유 확인용으로만 이용됩니다. "
                         "인증 완료 후 아무캐릭터로나 바꾸셔도 상관없습니다.\n"
                         "또한 인증 완료 후 디스코드에서 사용할 대표캐릭터를 선택하는 화면이 나오니 "
@@ -447,6 +460,9 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 text_embed = discord.Embed(
                     title="✅ 인증 안내",
                     description=(
+                        "**질문**\n"
+                        "4️⃣ 봇이 대표로 바꾸라는 캐릭터는 1660 이하인캐릭터인데 문제 없나요?\n\n"
+                        "**답변**\n"
                         "인증 과정에서 바꾸는 대표캐릭터는 계정 소유 확인용으로만 이용됩니다. "
                         "원정대 내 지정된 레벨 이상의 캐릭터가 하나라도 존재하면, 문제 없이 인증 가능합니다.\n"
                         "또한 인증 완료 후 디스코드에서 사용할 대표캐릭터를 선택하는 화면이 나오니 "

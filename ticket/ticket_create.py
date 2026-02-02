@@ -429,12 +429,32 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
             @discord.ui.button(label="3번", style=discord.ButtonStyle.secondary, row=0)
             async def option_three(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
-                await interaction.response.send_message("✅ 확인했습니다. 추가 안내 준비 중입니다.", ephemeral=True)
+                text_embed = discord.Embed(
+                    title="✅ 인증 안내",
+                    description=(
+                        "인증 과정에서 바꾸는 대표캐릭터는 계정 소유 확인용으로만 이용됩니다. "
+                        "인증 완료 후 아무캐릭터로나 바꾸셔도 상관없습니다.\n"
+                        "또한 인증 완료 후 디스코드에서 사용할 대표캐릭터를 선택하는 화면이 나오니 "
+                        "인증 절차에 따라주시면 됩니다."
+                    ),
+                    color=discord.Color.blurple(),
+                )
+                await interaction.response.edit_message(embed=text_embed, view=TicketAuthTextView())
 
             @discord.ui.button(label="4번", style=discord.ButtonStyle.secondary, row=1)
             async def option_four(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
-                await interaction.response.send_message("✅ 확인했습니다. 추가 안내 준비 중입니다.", ephemeral=True)
+                text_embed = discord.Embed(
+                    title="✅ 인증 안내",
+                    description=(
+                        "인증 과정에서 바꾸는 대표캐릭터는 계정 소유 확인용으로만 이용됩니다. "
+                        "원정대 내 지정된 레벨 이상의 캐릭터가 하나라도 존재하면, 문제 없이 인증 가능합니다.\n"
+                        "또한 인증 완료 후 디스코드에서 사용할 대표캐릭터를 선택하는 화면이 나오니 "
+                        "인증 절차에 따라주시면 됩니다."
+                    ),
+                    color=discord.Color.blurple(),
+                )
+                await interaction.response.edit_message(embed=text_embed, view=TicketAuthTextView())
 
             @discord.ui.button(label="5번", style=discord.ButtonStyle.secondary, row=1)
             async def option_five(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -473,6 +493,21 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
                 await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
                 await interaction.response.edit_message(embed=inquiry_embed, view=TicketControlView())
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction)
+
+        class TicketAuthTextView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=None)
+
+            @discord.ui.button(label="뒤로가기", style=discord.ButtonStyle.secondary, emoji="↩️")
+            async def back_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                await interaction.response.edit_message(embed=auth_embed, view=TicketAuthView())
 
             @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
             async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):

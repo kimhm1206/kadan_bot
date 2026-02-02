@@ -437,7 +437,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 if action == "delete":
                     await auto_close_and_delete()
                 elif action == "close":
-                    await close_ticket_message(chatbot_message, allow_delete=False)
+                    await close_ticket_message(chatbot_message, allow_delete=True)
 
             timeout_task = asyncio.create_task(_timeout())
 

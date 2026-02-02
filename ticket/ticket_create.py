@@ -297,7 +297,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
         chatbot_embed = discord.Embed(
             title=f"{icon} {ticket_type} 시작 안내",
-            description=f"**{member.mention} 님, 먼저 챗봇과 대화해 주세요.**",
+            description=f"**{member.mention} 님, 안내에 따라 진행해 주세요.**",
             color=discord.Color.blurple(),
         )
         chatbot_embed.add_field(
@@ -336,7 +336,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
             color=discord.Color.purple(),
         )
         auth_embed.add_field(
-            name="📌 자주 묻는 질문",
+            name="📌 FAQ · 많이 묻는 질문",
             value=(
                 "1️⃣ 마이페이지 프로필 주소가 올바르지 않다고 떠요.\n"
                 "2️⃣ 대표캐릭터를 어디서 바꿔야하는지 모르겠어요.\n"

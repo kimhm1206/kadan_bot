@@ -870,12 +870,13 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
         def extract_member_no_from_link(link: str) -> Optional[str]:
             cleaned = link.strip()
-            if cleaned.startswith("http://") or cleaned.startswith("https://"):
+            if "://" in cleaned:
                 cleaned = cleaned.split("://", 1)[1]
-            cleaned = cleaned.split("?", 1)[0]
-            if not cleaned.startswith("profile.onstove.com/ko/"):
+            cleaned = cleaned.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+            if not cleaned.startswith("profile.onstove.com/"):
                 return None
-            member_no = cleaned.split("/")[-1]
+            path = cleaned.split("profile.onstove.com/", 1)[1]
+            member_no = path.split("/")[-1] if path else ""
             return member_no if member_no.isdigit() else None
 
         class AuthLinkModal(discord.ui.Modal):

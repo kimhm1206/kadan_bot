@@ -208,6 +208,27 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
         color=discord.Color.blue()
     )
 
+    async def close_ticket(interaction: discord.Interaction):
+        # 관리자 또는 개설자만 닫기 가능
+        if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⚠️ 이 티켓을 닫을 권한이 없습니다.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("⏳ 티켓이 종료되었습니다.", ephemeral=True)
+        await channel.edit(name=f"종료된-{channel.name}")
+        await channel.set_permissions(member, view_channel=False)
+
+        # 기존 메시지 edit → 삭제 버튼만 남김
+        delete_view = TicketDeleteView(member, ticket_type, log_channel)
+        await interaction.message.edit(
+            embed=discord.Embed(
+                title=f"{icon} {ticket_type} 티켓 종료됨",
+                description="🔒 이 문의는 종료되었습니다.\n\n📌 메모를 남긴 뒤 아래 버튼으로 채널을 삭제할 수 있습니다. \n마지막 20개의 메시지만 로그에 남습니다.",
+                color=discord.Color.red()
+            ),
+            view=delete_view
+        )
+
     # 🔹 닫기/삭제 버튼 뷰
     class TicketControlView(discord.ui.View):
         def __init__(self):
@@ -215,25 +236,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
         @discord.ui.button(label="티켓 종료", style=discord.ButtonStyle.danger, emoji="❌")
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
-            # 관리자 또는 개설자만 닫기 가능
-            if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message("⚠️ 이 티켓을 닫을 권한이 없습니다.", ephemeral=True)
-                return
-
-            await interaction.response.send_message("⏳ 티켓이 종료되었습니다.", ephemeral=True)
-            await channel.edit(name=f"종료된-{channel.name}")
-            await channel.set_permissions(member, view_channel=False)
-
-            # 기존 메시지 edit → 삭제 버튼만 남김
-            delete_view = TicketDeleteView(member, ticket_type, log_channel)
-            await interaction.message.edit(
-                embed=discord.Embed(
-                    title=f"{icon} {ticket_type} 티켓 종료됨",
-                    description="🔒 이 문의는 종료되었습니다.\n\n📌 메모를 남긴 뒤 아래 버튼으로 채널을 삭제할 수 있습니다. \n마지막 20개의 메시지만 로그에 남습니다.",
-                    color=discord.Color.red()
-                ),
-                view=delete_view
-            )
+            await close_ticket(interaction)
 
     class TicketDeleteView(discord.ui.View):
         def __init__(self, ticket_owner: discord.Member, t_type: str, log_ch: discord.TextChannel):
@@ -277,7 +280,55 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
 
 
     # ✅ 기본 임베드 + 컨트롤 뷰 전송
-    await channel.send(content=member.mention, embed=embed, view=TicketControlView())
+    if ticket_type in ["문의", "인증"]:
+        await channel.set_permissions(member, send_messages=False)
+
+        chatbot_embed = discord.Embed(
+            title=f"{icon} {ticket_type} 안내",
+            description=(
+                f"{member.mention} 님, 관리자와 소통하기 전에 먼저 챗봇과 대화해 주세요.\n"
+                "아래 버튼을 눌러 진행할 항목을 선택해 주세요."
+            ),
+            color=discord.Color.blurple(),
+        )
+
+        inquiry_embed = discord.Embed(
+            title=f"{icon} 문의 접수 안내",
+            description=(
+                f"{member.mention} 님, 아래에 문의 내용을 작성해 주세요.\n\n"
+                "서로 존중하는 태도로 예쁘게 이야기해 주세요. 🙏\n"
+                "❌ 문의 사항 종료 시 아래 버튼을 눌러 티켓을 종료할 수 있습니다."
+            ),
+            color=discord.Color.blue(),
+        )
+
+        class TicketChatbotView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=None)
+
+            @discord.ui.button(label="인증 관련", style=discord.ButtonStyle.primary, emoji="🔑")
+            async def auth_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await interaction.response.send_message(
+                    "🔧 인증 관련 흐름은 곧 상세 분기로 확장될 예정입니다.",
+                    ephemeral=True,
+                )
+
+            @discord.ui.button(label="인증이 아닌 다른 문의", style=discord.ButtonStyle.success, emoji="💬")
+            async def other_inquiry_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
+                    await interaction.response.send_message("⚠️ 요청자만 사용할 수 있습니다.", ephemeral=True)
+                    return
+
+                await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+                await interaction.response.edit_message(embed=inquiry_embed, view=TicketControlView())
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await close_ticket(interaction)
+
+        await channel.send(content=member.mention, embed=chatbot_embed, view=TicketChatbotView())
+    else:
+        await channel.send(content=member.mention, embed=embed, view=TicketControlView())
 
     # ✅ 차단 타입일 경우 추가 임베드/뷰
     if ticket_type == "차단" and block_data:

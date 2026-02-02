@@ -18,7 +18,8 @@ def build_ticket_panel_embed(server_id: int) -> discord.Embed:
             "🔑 **인증** : 정상적으로 인증이 되지 않는 경우\n\n"
             "⏳ **안내 사항**\n"
             "생성된 채널에서 서버 관리자와 직접 대화하실 수 있습니다.\n"
-            "서로 존중하는 태도로 문의해 주세요."
+            "서로 존중하는 태도로 문의해 주세요.\n"
+            "관리자에게 직접 DM은 답변하지 않습니다."
         ),
         color=discord.Color.red()
     )

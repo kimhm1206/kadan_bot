@@ -1,8 +1,9 @@
 import asyncio
+import re
 import discord
 from datetime import datetime
 from typing import Optional
-from utils.function import get_setting_cached
+from utils.function import get_conn, get_setting_cached
 import os
 import aiohttp
 from block.block_ticket import BlockTicketView  # ✅ 차단 해제 뷰
@@ -339,6 +340,47 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
             "📎 **캡쳐본이 없으면 관리자가 확인 후 문의를 종료합니다.**"
         )
 
+        def extract_member_no(input_text: str) -> str | None:
+            numbers = re.findall(r"\d+", input_text)
+            return numbers[-1] if numbers else None
+
+        def lookup_auth_records(member_no: str) -> tuple[str, list[int]]:
+            rows: list[tuple[int, str | None]] = []
+            table_map = [
+                f"auth_accounts_{guild_id}",
+                f"auth_sub_accounts_{guild_id}",
+                f"deleted_auth_accounts_{guild_id}",
+                f"deleted_auth_sub_accounts_{guild_id}",
+            ]
+            with get_conn() as conn, conn.cursor() as cur:
+                for table in table_map:
+                    cur.execute(
+                        f"SELECT discord_user_id, nickname FROM {table} WHERE stove_member_no = %s",
+                        (member_no,),
+                    )
+                    rows.extend(cur.fetchall())
+
+            if not rows:
+                return "❌ 해당 번호로 인증 기록을 찾지 못했습니다.", []
+
+            nickname_map: dict[int, str] = {}
+            discord_ids: list[int] = []
+            for discord_id, nickname in rows:
+                if not discord_id:
+                    continue
+                discord_id = int(discord_id)
+                if discord_id not in nickname_map:
+                    nickname_map[discord_id] = nickname or "닉네임 없음"
+                    discord_ids.append(discord_id)
+
+            lines = []
+            for discord_id in discord_ids:
+                mention = f"<@{discord_id}>"
+                nickname = nickname_map.get(discord_id, "닉네임 없음")
+                lines.append(f"- {mention} (discord_id={discord_id}, nickname={nickname})")
+
+            return "\n".join(lines) if lines else "❌ 해당 번호로 인증 기록을 찾지 못했습니다.", discord_ids
+
         async def auto_close_and_delete():
             await archive_ticket_channel(
                 channel=channel,
@@ -402,7 +444,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
             async def _reset_timeout(self):
                 await schedule_timeout("close")
 
-            async def _send_video_response(self, interaction: discord.Interaction, url: str):
+            async def _send_video_response(self, interaction: discord.Interaction, url: str, video_label: str):
                 await self._reset_timeout()
                 question_label = (
                     "1️⃣ 마이페이지 프로필 주소가 올바르지 않다고 떠요."
@@ -420,13 +462,14 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 )
                 video_embed.set_footer(text="필요 시 관리자에게 문의를 이어주세요.")
                 await interaction.response.edit_message(embed=video_embed, view=TicketAuthResponseView(url))
-                await interaction.followup.send(url)
+                await interaction.followup.send(f"{video_label}\n{url}")
 
             @discord.ui.button(label="1번", style=discord.ButtonStyle.primary, row=0)
             async def option_one(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._send_video_response(
                     interaction,
                     "https://cdn.discordapp.com/attachments/1467748338328670229/1467748552758263901/b6979124805680fd.mp4?ex=698182dc&is=6980315c&hm=a7072ddf9bc547553a090d5b56512cf234e56e8ff17007bbd06e6346f89b9c32&",
+                    "마이페이지 링크 영상",
                 )
 
             @discord.ui.button(label="2번", style=discord.ButtonStyle.primary, row=0)
@@ -434,6 +477,7 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 await self._send_video_response(
                     interaction,
                     "https://cdn.discordapp.com/attachments/1467748338328670229/1467748551147651102/15e7b960aa938d11.mp4?ex=698182dc&is=6980315c&hm=90d5e6048058f161dcee7e6948f9cca38d6053b85c994260dac0f009ba7ddc66&",
+                    "대표 캐릭터 변경 영상",
                 )
 
             @discord.ui.button(label="3번", style=discord.ButtonStyle.secondary, row=0)
@@ -475,12 +519,34 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
             @discord.ui.button(label="5번", style=discord.ButtonStyle.secondary, row=1)
             async def option_five(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
-                await interaction.response.send_message("✅ 확인했습니다. 추가 안내 준비 중입니다.", ephemeral=True)
+                embed = discord.Embed(
+                    title="🧾 인증 안내",
+                    description=(
+                        "**질문**\n"
+                        "5️⃣ 계정을 구매 및 양도 받았는데 중복인증이라고 인증이 안되고 있어요.\n\n"
+                        "**답변**\n"
+                        "우선 기존 인증을 조회합니다.\n"
+                        "아래 버튼을 눌러 인증 시 사용되는 마이페이지 링크를 입력해주세요."
+                    ),
+                    color=discord.Color.blurple(),
+                )
+                await interaction.response.edit_message(embed=embed, view=TicketAuthTransferView())
 
             @discord.ui.button(label="6번", style=discord.ButtonStyle.secondary, row=1)
             async def option_six(self, button: discord.ui.Button, interaction: discord.Interaction):
                 await self._reset_timeout()
-                await interaction.response.send_message("✅ 확인했습니다. 추가 안내 준비 중입니다.", ephemeral=True)
+                embed = discord.Embed(
+                    title="🧾 인증 안내",
+                    description=(
+                        "**질문**\n"
+                        "6️⃣ 계정 인증 시 중복인증이라 나와요.\n\n"
+                        "**답변**\n"
+                        "우선 기존 인증을 조회합니다.\n"
+                        "아래 버튼을 눌러 인증 시 사용되는 마이페이지 링크를 입력해주세요."
+                    ),
+                    color=discord.Color.blurple(),
+                )
+                await interaction.response.edit_message(embed=embed, view=TicketAuthDuplicateView())
 
             @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌", row=2)
             async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -530,6 +596,267 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 if timeout_task and not timeout_task.done():
                     timeout_task.cancel()
                 await close_ticket(interaction)
+
+        class TicketAuthTransferView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=None)
+
+            @discord.ui.button(label="마이페이지 링크 입력", style=discord.ButtonStyle.primary, emoji="🔗")
+            async def enter_link(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await interaction.response.send_modal(AuthLinkModal(flow="transfer"))
+
+            @discord.ui.button(label="뒤로가기", style=discord.ButtonStyle.secondary, emoji="↩️")
+            async def back_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                await interaction.response.edit_message(embed=auth_embed, view=TicketAuthView())
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction)
+
+        class TicketAuthDuplicateView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=None)
+
+            @discord.ui.button(label="마이페이지 링크 입력", style=discord.ButtonStyle.primary, emoji="🔗")
+            async def enter_link(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await interaction.response.send_modal(AuthLinkModal(flow="duplicate"))
+
+            @discord.ui.button(label="뒤로가기", style=discord.ButtonStyle.secondary, emoji="↩️")
+            async def back_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                await interaction.response.edit_message(embed=auth_embed, view=TicketAuthView())
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction)
+
+        class TicketAuthTransferResultView(discord.ui.View):
+            def __init__(self, result_text: str):
+                super().__init__(timeout=None)
+                self.result_text = result_text
+
+            @discord.ui.button(label="관리자에게 문의하기", style=discord.ButtonStyle.success, emoji="💬")
+            async def contact_admin(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
+                    await interaction.response.send_message("⚠️ 요청자만 사용할 수 있습니다.", ephemeral=True)
+                    return
+
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+
+                await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+                await channel.send(f"🔍 인증 검색 결과\n{self.result_text}")
+                await interaction.response.edit_message(
+                    embed=discord.Embed(
+                        title="✅ 관리자에게 문의하기",
+                        description=(
+                            "채팅이 열렸습니다. 아래에 캡쳐본을 전송해주세요.\n"
+                            "캡쳐본이 없으면 관리자가 확인 후 문의를 종료합니다."
+                        ),
+                        color=discord.Color.green(),
+                    ),
+                    view=TicketTransferCloseView(),
+                )
+
+            @discord.ui.button(label="뒤로가기", style=discord.ButtonStyle.secondary, emoji="↩️")
+            async def back_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                await interaction.response.edit_message(embed=auth_embed, view=TicketAuthView())
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction)
+
+        class TicketTransferCloseView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=None)
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction)
+
+        class TicketAuthDuplicateResultView(discord.ui.View):
+            def __init__(self, result_text: str, discord_ids: list[int]):
+                super().__init__(timeout=None)
+                self.result_text = result_text
+                self.discord_ids = discord_ids
+
+            @discord.ui.button(label="예", style=discord.ButtonStyle.success, emoji="✅")
+            async def yes_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                embed = discord.Embed(
+                    title="✅ 인증 안내",
+                    description=(
+                        "해당 계정으로 접속해서 **인증 관리 → 인증 취소**를 진행 해주시거나 "
+                        "카단서버를 탈퇴해 주세요.\n"
+                        "위 진행이 불가할 시 관리자에게 문의하기 버튼을 눌러 자세한 설명을 남겨주세요.\n"
+                        "아무런 메시지가 없을 시 관리자가 확인 후 문의를 종료합니다."
+                    ),
+                    color=discord.Color.blurple(),
+                )
+                await interaction.response.edit_message(embed=embed, view=TicketAuthDuplicateYesView(self.result_text))
+
+            @discord.ui.button(label="아니오", style=discord.ButtonStyle.danger, emoji="❌")
+            async def no_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+
+                await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+
+                target_mentions = []
+                for discord_id in self.discord_ids:
+                    target = guild.get_member(discord_id)
+                    if target:
+                        target_mentions.append(target.mention)
+                        await channel.set_permissions(
+                            target,
+                            view_channel=True,
+                            send_messages=True,
+                            attach_files=True,
+                            embed_links=True,
+                        )
+                    else:
+                        target_mentions.append(f"<@{discord_id}>")
+
+                target_label = " ".join(target_mentions) if target_mentions else "인증 대상자"
+
+                await channel.send(
+                    f"🔔 문의자가 인증 중인 계정에 중복인증을 신청했습니다.\n"
+                    f"{member.mention} 님이 {target_label} 님이 인증 중인 계정에 중복인증을 신청했습니다.\n"
+                    "두 분이서 대화 나눈 후 관리자가 판단하여 인증 기록을 관리할 예정입니다.\n"
+                    "문의 종료는 관리자만 누를 수 있습니다."
+                )
+
+                await interaction.response.edit_message(
+                    embed=discord.Embed(
+                        title="🛡️ 중복 인증 안내",
+                        description="인증 대상자와 대화를 진행해 주세요.",
+                        color=discord.Color.orange(),
+                    ),
+                    view=TicketAuthAdminCloseView(),
+                )
+
+            @discord.ui.button(label="뒤로가기", style=discord.ButtonStyle.secondary, emoji="↩️")
+            async def back_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                await interaction.response.edit_message(embed=auth_embed, view=TicketAuthView())
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction)
+
+        class TicketAuthDuplicateYesView(discord.ui.View):
+            def __init__(self, result_text: str):
+                super().__init__(timeout=None)
+                self.result_text = result_text
+
+            @discord.ui.button(label="관리자에게 문의하기", style=discord.ButtonStyle.success, emoji="💬")
+            async def contact_admin(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
+                    await interaction.response.send_message("⚠️ 요청자만 사용할 수 있습니다.", ephemeral=True)
+                    return
+
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+
+                await channel.set_permissions(member, send_messages=True, attach_files=True, embed_links=True)
+                await channel.send(f"🔍 인증 검색 결과\n{self.result_text}")
+                await interaction.response.edit_message(
+                    embed=discord.Embed(
+                        title="✅ 관리자에게 문의하기",
+                        description=(
+                            "채팅이 열렸습니다. 상황을 설명해 주세요.\n"
+                            "아무런 메시지가 없을 시 관리자가 확인 후 문의를 종료합니다."
+                        ),
+                        color=discord.Color.green(),
+                    ),
+                    view=TicketTransferCloseView(),
+                )
+
+            @discord.ui.button(label="뒤로가기", style=discord.ButtonStyle.secondary, emoji="↩️")
+            async def back_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                await interaction.response.edit_message(embed=auth_embed, view=TicketAuthView())
+
+            @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌")
+            async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction)
+
+        class TicketAuthAdminCloseView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=None)
+
+            @discord.ui.button(label="인증 종료", style=discord.ButtonStyle.danger, emoji="⛔")
+            async def admin_close(self, button: discord.ui.Button, interaction: discord.Interaction):
+                if not interaction.user.guild_permissions.administrator:
+                    await interaction.response.send_message("⚠️ 관리자만 사용할 수 있습니다.", ephemeral=True)
+                    return
+                if timeout_task and not timeout_task.done():
+                    timeout_task.cancel()
+                await close_ticket(interaction)
+
+        class AuthLinkModal(discord.ui.Modal):
+            def __init__(self, flow: str):
+                super().__init__(title="마이페이지 링크 입력")
+                self.flow = flow
+                self.link_input = discord.ui.InputText(
+                    label="마이페이지 링크",
+                    placeholder="https://...",
+                    style=discord.InputTextStyle.short,
+                )
+                self.add_item(self.link_input)
+
+            async def on_submit(self, interaction: discord.Interaction):
+                await schedule_timeout("close")
+                member_no = extract_member_no(self.link_input.value)
+                if not member_no:
+                    await interaction.response.send_message(
+                        "⚠️ 링크에서 번호를 찾을 수 없습니다. 다시 입력해 주세요.",
+                        ephemeral=True,
+                    )
+                    return
+
+                result_text, discord_ids = lookup_auth_records(member_no)
+                lookup_embed = discord.Embed(
+                    title="🔍 인증 검색 결과",
+                    description=f"**조회 번호:** {member_no}\n\n{result_text}",
+                    color=discord.Color.blurple(),
+                )
+
+                if self.flow == "transfer":
+                    lookup_embed.add_field(
+                        name="📎 안내",
+                        value=(
+                            "해당 계정의 양도 및 구매 시 **판매자/본 소유주와의 거래 메시지 또는 DM, "
+                            "거래 내역 등** 양도 받은 사실이 적혀있는 증거를 캡쳐해 "
+                            "아래 관리자에게 문의하기 버튼을 눌러 전송해주세요.\n"
+                            "관리자가 확인 후 캡처본이 없을 시 문의를 종료합니다."
+                        ),
+                        inline=False,
+                    )
+                    view = TicketAuthTransferResultView(result_text)
+                else:
+                    lookup_embed.add_field(
+                        name="❓ 본인 소유 여부",
+                        value="해당 계정이 본인 소유입니까? 아래 버튼을 선택해 주세요.",
+                        inline=False,
+                    )
+                    view = TicketAuthDuplicateResultView(result_text, discord_ids)
+
+                await interaction.response.edit_message(embed=lookup_embed, view=view)
 
         chatbot_message = await channel.send(content=member.mention, embed=chatbot_embed, view=TicketChatbotView())
         await schedule_timeout("delete")

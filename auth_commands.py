@@ -85,47 +85,116 @@ def setup(bot: discord.Bot):
 
     @bot.slash_command(
         name="인증해제",
-        description="대상 멤버의 인증 정보를 강제로 삭제합니다.",
+        description="discord_id, member, stove_member_no로 인증 정보를 강제로 삭제합니다.",
         default_member_permissions=discord.Permissions(administrator=True),
     )
     async def force_unverify(
         ctx: discord.ApplicationContext,
-        member: discord.Option(discord.Member, description="인증을 해제할 멤버"),  # type: ignore
+        search_type: discord.Option(
+            str,
+            description="해제 기준을 선택하세요",
+            choices=["discord_id", "member", "stove_member_no"],
+        ),  # type: ignore
+        value: discord.Option(str, description="검색 값 입력", required=False),  # type: ignore
+        member: discord.Option(discord.Member, description="인증을 해제할 멤버", required=False),  # type: ignore
     ):
         await ctx.defer(ephemeral=True)
 
-        main_nick, sub_list = delete_main_account(ctx.guild_id, member.id)
-        if not main_nick and not sub_list:
+        if not ctx.guild:
+            await ctx.followup.send("⚠️ 길드에서만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        lookup_value = value.strip() if value else ""
+        discord_ids: set[int] = set()
+
+        if search_type == "member":
+            if member is None:
+                await ctx.followup.send("⚠️ member를 선택해 주세요.", ephemeral=True)
+                return
+            discord_ids.add(member.id)
+        elif search_type == "discord_id":
+            if not lookup_value:
+                await ctx.followup.send("⚠️ discord_id 값을 입력해주세요.", ephemeral=True)
+                return
+            try:
+                discord_ids.add(int(lookup_value))
+            except ValueError:
+                await ctx.followup.send("⚠️ discord_id는 숫자여야 합니다.", ephemeral=True)
+                return
+        else:
+            if not lookup_value:
+                await ctx.followup.send("⚠️ stove_member_no 값을 입력해주세요.", ephemeral=True)
+                return
+            with get_conn() as conn, conn.cursor() as cur:
+                table_map = [
+                    f"auth_accounts_{ctx.guild_id}",
+                    f"auth_sub_accounts_{ctx.guild_id}",
+                    f"deleted_auth_accounts_{ctx.guild_id}",
+                    f"deleted_auth_sub_accounts_{ctx.guild_id}",
+                ]
+                for table in table_map:
+                    cur.execute(
+                        f"SELECT discord_user_id FROM {table} WHERE stove_member_no = %s",
+                        (lookup_value,),
+                    )
+                    rows = cur.fetchall()
+                    for row in rows:
+                        if row[0]:
+                            discord_ids.add(int(row[0]))
+
+        if not discord_ids:
             await ctx.followup.send("⚠️ 인증 내역을 찾을 수 없습니다.", ephemeral=True)
             return
 
-        for key in ("main_auth_role", "sub_auth_role"):
-            role_id = get_setting_cached(ctx.guild_id, key)
-            if role_id:
-                role = ctx.guild.get_role(int(role_id))
-                if role:
-                    try:
-                        await member.remove_roles(role)
-                    except discord.Forbidden:
-                        pass
+        async def resolve_user(user_id: int) -> discord.abc.User:
+            found_member = ctx.guild.get_member(user_id)
+            if found_member:
+                return found_member
+            try:
+                return await ctx.bot.fetch_user(user_id)
+            except discord.HTTPException:
+                return discord.Object(id=user_id)
 
-        try:
-            await member.edit(nick=None)
-        except discord.Forbidden:
-            pass
+        results: list[str] = []
+        for discord_id in sorted(discord_ids):
+            target_member = ctx.guild.get_member(discord_id)
+            main_nick, sub_list = delete_main_account(ctx.guild_id, discord_id)
+            if not main_nick and not sub_list:
+                results.append(f"- {discord_id}: 인증 내역 없음")
+                continue
 
-        await send_main_delete_log(ctx.bot, ctx.guild_id, member, main_nick, sub_list)
+            if target_member:
+                for key in ("main_auth_role", "sub_auth_role"):
+                    role_id = get_setting_cached(ctx.guild_id, key)
+                    if role_id:
+                        role = ctx.guild.get_role(int(role_id))
+                        if role:
+                            try:
+                                await target_member.remove_roles(role)
+                            except discord.Forbidden:
+                                pass
 
-        lines = ["✅ 인증 정보를 강제로 삭제했습니다."]
-        if main_nick:
-            lines.append(f"- 본계정 `{main_nick}` 삭제")
-        if sub_list:
-            sub_summary = ", ".join(
-                f"#{sub_num} `{nick or '닉네임 없음'}`" for sub_num, nick in sub_list
-            )
-            lines.append(f"- 부계정 삭제: {sub_summary}")
+                try:
+                    await target_member.edit(nick=None)
+                except discord.Forbidden:
+                    pass
 
-        await ctx.followup.send("\n".join(lines), ephemeral=True)
+            log_user = target_member or await resolve_user(discord_id)
+            await send_main_delete_log(ctx.bot, ctx.guild_id, log_user, main_nick, sub_list)
+
+            detail_lines = []
+            if main_nick:
+                detail_lines.append(f"본계정 `{main_nick}` 삭제")
+            if sub_list:
+                sub_summary = ", ".join(
+                    f"#{sub_num} `{nick or '닉네임 없음'}`" for sub_num, nick in sub_list
+                )
+                detail_lines.append(f"부계정 삭제: {sub_summary}")
+            detail_text = " / ".join(detail_lines) if detail_lines else "삭제 완료"
+            results.append(f"- {discord_id}: {detail_text}")
+
+        response_lines = ["✅ 인증 정보를 강제로 삭제했습니다."] + results
+        await ctx.followup.send("\n".join(response_lines), ephemeral=True)
 
     @bot.slash_command(
         name="인증정리",

@@ -81,7 +81,8 @@ async def start_auth_ticket_flow(
             "3️⃣ 대표캐릭터는 다른걸로하고싶은데 안바꾸는 방법은 없나요?\n"
             "4️⃣ 봇이 대표로 바꾸라는 캐릭터는 1660 이하인캐릭터인데 문제 없나요?\n"
             "5️⃣ 계정을 구매 및 양도 받았는데 중복인증이라고 인증이 안되고 있어요.\n"
-            "6️⃣ 제계졍을 인증하는데 중복인증이라고 나와요."
+            "6️⃣ 본인 계정을 인증하는데 중복인증이라고 나와요.\n"
+            "7️⃣ 닉네임을 변경했어요. 닉네임을 다른 캐릭터로 바꾸고 싶어요."
         ),
         inline=False,
     )
@@ -180,7 +181,7 @@ async def start_auth_ticket_flow(
         def __init__(self):
             super().__init__(timeout=None)
 
-        @discord.ui.button(label="인증 관련", style=discord.ButtonStyle.primary, emoji="🔑")
+        @discord.ui.button(label="인증 & 닉네임", style=discord.ButtonStyle.primary, emoji="🔑")
         async def auth_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             await schedule_timeout("close")
             await interaction.response.edit_message(embed=auth_embed, view=TicketAuthView())
@@ -321,7 +322,7 @@ async def start_auth_ticket_flow(
             embed = discord.Embed(title="🧾 인증 안내", color=discord.Color.blurple())
             embed.add_field(
                 name="🧾 질문",
-                value="6️⃣ 제계졍을 인증하는데 중복인증이라고 나와요.",
+                value="6️⃣ 본인 계정을 인증하는데 중복인증이라고 나와요.",
                 inline=False,
             )
             embed.add_field(
@@ -334,7 +335,28 @@ async def start_auth_ticket_flow(
             )
             await interaction.response.edit_message(embed=embed, view=TicketAuthDuplicateView())
 
-        @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌", row=2)
+        @discord.ui.button(label="7번", style=discord.ButtonStyle.primary, row=2)
+        async def option_seven(self, button: discord.ui.Button, interaction: discord.Interaction):
+            await self._reset_timeout()
+            text_embed = discord.Embed(title="✅ 인증 안내", color=discord.Color.blurple())
+            text_embed.add_field(
+                name="🧾 질문",
+                value="7️⃣ 닉네임을 변경했어요. 닉네임을 다른 캐릭터로 바꾸고 싶어요.",
+                inline=False,
+            )
+            text_embed.add_field(
+                name="✅ 답변",
+                value=(
+                    "닉네임 변경은 거래소 인증 탭에서 할 수 있습니다.\n"
+                    "거래소 인증 탭에서 닉네임 변경을 클릭하신 후 다른 캐릭터로 변경하시면 됩니다.\n"
+                    "현재 본계정 닉네임이 다른 닉네임으로 변경된 경우엔 아무 캐릭터로나 변경하신 후\n"
+                    "다시 변경하시면 바뀐 닉네임이 있으니 원하시는 캐릭터로 닉변하시면 됩니다."
+                ),
+                inline=False,
+            )
+            await interaction.response.edit_message(embed=text_embed, view=TicketAuthTextView())
+
+        @discord.ui.button(label="문의 종료", style=discord.ButtonStyle.danger, emoji="❌", row=3)
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()

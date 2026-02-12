@@ -158,6 +158,32 @@ async def start_auth_ticket_flow(
         )
 
     timeout_task: asyncio.Task | None = None
+    auth_menu_history: list[int] = []
+    auth_summary_sent = False
+
+    def record_auth_menu(option: int) -> None:
+        if option not in auth_menu_history:
+            auth_menu_history.append(option)
+
+    def build_auth_summary_message() -> Optional[str]:
+        if not auth_menu_history:
+            return None
+        menu_list = " ".join(f"{num}번" for num in auth_menu_history)
+        return f"카단봇이 {menu_list} 메뉴를 이용한 유저 입니다."
+
+    async def close_ticket_with_summary(interaction: discord.Interaction, allow_delete: bool = True) -> None:
+        nonlocal auth_summary_sent
+        if interaction.user.id != member.id and not interaction.user.guild_permissions.administrator:
+            await close_ticket(interaction, allow_delete=allow_delete)
+            return
+
+        if not auth_summary_sent:
+            summary_message = build_auth_summary_message()
+            if summary_message:
+                await channel.send(summary_message)
+                auth_summary_sent = True
+
+        await close_ticket(interaction, allow_delete=allow_delete)
 
     async def schedule_timeout(action: str):
         nonlocal timeout_task
@@ -208,7 +234,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketAuthView(discord.ui.View):
         def __init__(self):
@@ -241,6 +267,7 @@ async def start_auth_ticket_flow(
 
         @discord.ui.button(label="1번", style=discord.ButtonStyle.primary, row=0)
         async def option_one(self, button: discord.ui.Button, interaction: discord.Interaction):
+            record_auth_menu(1)
             await self._send_video_response(
                 interaction,
                 "https://cdn.discordapp.com/attachments/1467748338328670229/1467748552758263901/b6979124805680fd.mp4?ex=698182dc&is=6980315c&hm=a7072ddf9bc547553a090d5b56512cf234e56e8ff17007bbd06e6346f89b9c32&",
@@ -249,6 +276,7 @@ async def start_auth_ticket_flow(
 
         @discord.ui.button(label="2번", style=discord.ButtonStyle.primary, row=0)
         async def option_two(self, button: discord.ui.Button, interaction: discord.Interaction):
+            record_auth_menu(2)
             await self._send_video_response(
                 interaction,
                 "https://cdn.discordapp.com/attachments/1467748338328670229/1467748551147651102/15e7b960aa938d11.mp4?ex=698182dc&is=6980315c&hm=90d5e6048058f161dcee7e6948f9cca38d6053b85c994260dac0f009ba7ddc66&",
@@ -257,6 +285,7 @@ async def start_auth_ticket_flow(
 
         @discord.ui.button(label="3번", style=discord.ButtonStyle.primary, row=0)
         async def option_three(self, button: discord.ui.Button, interaction: discord.Interaction):
+            record_auth_menu(3)
             await self._reset_timeout()
             text_embed = discord.Embed(title="✅ 인증 안내", color=discord.Color.blurple())
             text_embed.add_field(
@@ -278,6 +307,7 @@ async def start_auth_ticket_flow(
 
         @discord.ui.button(label="4번", style=discord.ButtonStyle.primary, row=1)
         async def option_four(self, button: discord.ui.Button, interaction: discord.Interaction):
+            record_auth_menu(4)
             await self._reset_timeout()
             text_embed = discord.Embed(title="✅ 인증 안내", color=discord.Color.blurple())
             text_embed.add_field(
@@ -299,6 +329,7 @@ async def start_auth_ticket_flow(
 
         @discord.ui.button(label="5번", style=discord.ButtonStyle.primary, row=1)
         async def option_five(self, button: discord.ui.Button, interaction: discord.Interaction):
+            record_auth_menu(5)
             await self._reset_timeout()
             embed = discord.Embed(title="🧾 인증 안내", color=discord.Color.blurple())
             embed.add_field(
@@ -318,6 +349,7 @@ async def start_auth_ticket_flow(
 
         @discord.ui.button(label="6번", style=discord.ButtonStyle.primary, row=1)
         async def option_six(self, button: discord.ui.Button, interaction: discord.Interaction):
+            record_auth_menu(6)
             await self._reset_timeout()
             embed = discord.Embed(title="🧾 인증 안내", color=discord.Color.blurple())
             embed.add_field(
@@ -337,6 +369,7 @@ async def start_auth_ticket_flow(
 
         @discord.ui.button(label="7번", style=discord.ButtonStyle.primary, row=2)
         async def option_seven(self, button: discord.ui.Button, interaction: discord.Interaction):
+            record_auth_menu(7)
             await self._reset_timeout()
             text_embed = discord.Embed(title="✅ 인증 안내", color=discord.Color.blurple())
             text_embed.add_field(
@@ -360,7 +393,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketAuthResponseView(discord.ui.View):
         def __init__(self, url: str):
@@ -394,7 +427,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketAuthTextView(discord.ui.View):
         def __init__(self):
@@ -409,7 +442,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketAuthTransferView(discord.ui.View):
         def __init__(self):
@@ -428,7 +461,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketAuthDuplicateView(discord.ui.View):
         def __init__(self):
@@ -447,7 +480,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketAuthTransferResultView(discord.ui.View):
         def __init__(self, result_text: str):
@@ -497,7 +530,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketTransferCloseView(discord.ui.View):
         def __init__(self):
@@ -507,7 +540,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketAuthDuplicateResultView(discord.ui.View):
         def __init__(self, result_text: str, discord_ids: list[int]):
@@ -591,7 +624,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketAuthDuplicateYesView(discord.ui.View):
         def __init__(self, result_text: str):
@@ -641,7 +674,7 @@ async def start_auth_ticket_flow(
         async def close_button(self, button: discord.ui.Button, interaction: discord.Interaction):
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     class TicketAuthAdminCloseView(discord.ui.View):
         def __init__(self):
@@ -654,7 +687,7 @@ async def start_auth_ticket_flow(
                 return
             if timeout_task and not timeout_task.done():
                 timeout_task.cancel()
-            await close_ticket(interaction)
+            await close_ticket_with_summary(interaction)
 
     def extract_member_no_from_link(link: str) -> Optional[str]:
         cleaned = link.strip()

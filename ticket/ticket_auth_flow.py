@@ -102,9 +102,11 @@ async def start_auth_ticket_flow(
     )
 
     def lookup_auth_records(member_no: str) -> tuple[str, list[int]]:
-        current_rows: list[tuple[int, str | None]] = []
+        main_rows: list[tuple[int, str | None]] = []
+        sub_rows: list[tuple[int, str | None]] = []
         table_map = [
-            (f"auth_accounts_{guild_id}", current_rows),
+            (f"auth_accounts_{guild_id}", main_rows),
+            (f"auth_sub_accounts_{guild_id}", sub_rows),
         ]
         with get_conn() as conn, conn.cursor() as cur:
             for table, target in table_map:
@@ -114,7 +116,7 @@ async def start_auth_ticket_flow(
                 )
                 target.extend(cur.fetchall())
 
-        if not current_rows:
+        if not main_rows and not sub_rows:
             return "❌ 해당 번호로 인증 기록을 찾지 못했습니다.", []
 
         def build_lines(rows: list[tuple[int, str | None]], suffix: str = "") -> tuple[list[str], list[int]]:
@@ -138,7 +140,10 @@ async def start_auth_ticket_flow(
                 lines.append(line)
             return lines, discord_ids
 
-        current_lines, current_ids = build_lines(current_rows)
+        main_lines, main_ids = build_lines(main_rows, "(본계정)")
+        sub_lines, sub_ids = build_lines(sub_rows, "(부계정)")
+        current_lines = [*main_lines, *sub_lines]
+        current_ids = list(dict.fromkeys([*main_ids, *sub_ids]))
 
         result_text = "\n".join(
             [
@@ -148,7 +153,18 @@ async def start_auth_ticket_flow(
         )
         return result_text, current_ids
 
+    async def send_auth_summary_if_needed():
+        nonlocal auth_summary_sent
+        if auth_summary_sent:
+            return
+
+        summary_message = build_auth_summary_message()
+        if summary_message:
+            await channel.send(summary_message)
+            auth_summary_sent = True
+
     async def auto_close_and_delete():
+        await send_auth_summary_if_needed()
         await archive_ticket_channel_fn(
             channel=channel,
             deleter=guild.me,
@@ -199,6 +215,7 @@ async def start_auth_ticket_flow(
             if action == "delete":
                 await auto_close_and_delete()
             elif action == "close":
+                await send_auth_summary_if_needed()
                 await close_ticket_message(chatbot_message, allow_delete=True)
 
         timeout_task = asyncio.create_task(_timeout())

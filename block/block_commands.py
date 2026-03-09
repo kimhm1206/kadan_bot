@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import discord
@@ -270,6 +270,95 @@ def setup(bot: discord.Bot):
                 member,
                 main_nick,
                 sub_list
+            )
+
+        await ctx.followup.send("\n".join(msg), ephemeral=True)
+
+    @bot.slash_command(
+        name="타임아웃",
+        description="서버 멤버를 일정 기간 타임아웃(권한 회수 + 인증/차단 이관) 처리합니다",
+        default_member_permissions=discord.Permissions(administrator=True)
+    )
+    async def timeout_member(
+        ctx: discord.ApplicationContext,
+        member: discord.Option(discord.Member, description="타임아웃 처리할 서버 멤버"),  # type: ignore
+        range: discord.Option(  # type: ignore
+            int,
+            description="타임아웃 기간(일)",
+            choices=[1, 3, 7],
+        ),
+        reason: discord.Option(str, description="타임아웃 사유"),  # type: ignore
+    ):
+        await ctx.defer(ephemeral=True)
+        guild = ctx.guild
+        if not guild:
+            await ctx.followup.send("⚠️ 길드에서만 사용할 수 있는 명령입니다.", ephemeral=True)
+            return
+
+        now_kst = datetime.utcnow() + timedelta(hours=9)
+        timeout_end_kst = now_kst + timedelta(days=range)
+        timeout_end_text = timeout_end_kst.strftime("%Y년 %m월 %d일 %H시 %M분(KST)")
+
+        timeout_reason_overrides = {
+            "discord_id": reason,
+            "nickname": f"타임아웃 해제 가능 시각: {timeout_end_text}",
+        }
+
+        new_blocks, already_blocked = block_user(
+            ctx.guild_id,
+            member,
+            reason,
+            ctx.user.id,
+            reason_overrides=timeout_reason_overrides,
+        )
+
+        msg = [f"⏳ {member.mention} 타임아웃({range}일) 처리 결과:"]
+        msg.append(f"- 해제 가능 시각: `{timeout_end_text}`")
+
+        if new_blocks:
+            msg.append("✅ 새로 차단된 정보:")
+            for dtype, val in new_blocks:
+                msg.append(f"- {dtype}: `{val}`")
+        if already_blocked:
+            msg.append("⚠️ 이미 차단된 정보:")
+            for dtype, val in already_blocked:
+                msg.append(f"- {dtype}: `{val}`")
+
+        if new_blocks:
+            # 인증정보 이관 + 권한 회수(추방/밴 없음)
+            main_nick, sub_list = delete_main_account(ctx.guild_id, member.id)
+
+            for key in ("main_auth_role", "sub_auth_role"):
+                role_id = get_setting_cached(ctx.guild_id, key)
+                if role_id:
+                    role = guild.get_role(int(role_id))
+                    if role:
+                        try:
+                            await member.remove_roles(role)
+                        except discord.Forbidden:
+                            pass
+
+            try:
+                await member.edit(nick=None)
+            except discord.Forbidden:
+                pass
+
+            await broadcast_block_log(
+                bot,
+                blocked_gid=ctx.guild_id,
+                target_user=member,
+                raw_user_id=member.id,
+                new_blocks=new_blocks,
+                reason=f"[타임아웃 {range}일] {reason} / 해제 가능 시각: {timeout_end_text}",
+                blocked_by=ctx.user.id,
+            )
+
+            await send_main_delete_log(
+                ctx.bot,
+                ctx.guild_id,
+                member,
+                main_nick,
+                sub_list,
             )
 
         await ctx.followup.send("\n".join(msg), ephemeral=True)

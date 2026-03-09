@@ -225,6 +225,7 @@ def block_user(
     reason: str | None,
     blocked_by: int,
     extra_values: list[tuple[str, str | int]] | None = None,
+    reason_overrides: dict[str, str] | None = None,
 ):
     """
     유저/닉네임/discord_id를 입력받아 관련된 모든 인증/삭제 인증 정보를 조회 후
@@ -347,7 +348,14 @@ def block_user(
                    (guild_id, data_type, value, reason, created_at, blocked_by)
                    VALUES (%s, %s, %s, %s, %s, %s)""",
                 [
-                    (guild_id, dtype, str(value), reason, datetime.utcnow(), blocked_by)
+                    (
+                        guild_id,
+                        dtype,
+                        str(value),
+                        (reason_overrides or {}).get(dtype, reason),
+                        datetime.utcnow(),
+                        blocked_by,
+                    )
                     for dtype, value in new_blocks
                 ]
             )

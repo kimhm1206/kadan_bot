@@ -585,7 +585,7 @@ def get_user_blocked(guild_id: int, discord_id: int, member_no: str, nicknames: 
         placeholders = ", ".join(["%s"] * len(nicknames)) if nicknames else "NULL"
         cur.execute(
             f"""
-            SELECT guild_id, data_type, value, reason, created_at, blocked_by
+            SELECT id, guild_id, data_type, value, reason, created_at, blocked_by
             FROM blocked_users
             WHERE guild_id = %s
             AND (
@@ -601,12 +601,13 @@ def get_user_blocked(guild_id: int, discord_id: int, member_no: str, nicknames: 
 
     for r in rows:
         blocked.append({
-            "guild_id": r[0],
-            "data_type": r[1],
-            "value": r[2],
-            "reason": r[3],
-            "created_at": r[4],
-            "blocked_by": r[5]
+            "id": r[0],
+            "guild_id": r[1],
+            "data_type": r[2],
+            "value": r[3],
+            "reason": r[4],
+            "created_at": r[5],
+            "blocked_by": r[6]
         })
     return blocked
 

@@ -260,6 +260,11 @@ class RepChangeConfirmView(discord.ui.View):
                 nickname_list = [c["CharacterName"] for c in self.characters]
                 original_details = details.get("details") if isinstance(details, dict) else details
                 block_details = original_details
+                related_block_id = "unknown"
+                if original_details:
+                    existing_ids = [str(item.get("id")) for item in original_details if item.get("id")]
+                    if existing_ids:
+                        related_block_id = existing_ids[0]
                 bot_user_id = interaction.client.user.id if interaction.client.user else interaction.user.id
                 member_no_value = str(self.member_no) if self.member_no else ""
 
@@ -295,7 +300,7 @@ class RepChangeConfirmView(discord.ui.View):
                                     row_id = row[0]
                                     cur.execute(
                                         "UPDATE blocked_users SET reason = %s WHERE id = %s",
-                                        (f"{auto_reason} | 자동차단={row_id}", row_id),
+                                        (f"{auto_reason} | 연관차단={related_block_id}", row_id),
                                     )
                             conn.commit()
 

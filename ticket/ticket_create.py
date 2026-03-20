@@ -12,7 +12,8 @@ ICON_MAP = {
     "문의": "📩",
     "신고": "🚨",
     "인증": "🔑",
-    "차단": "📛"
+    "차단": "📛",
+    "타임아웃": "⏳",
 }
 
 
@@ -308,8 +309,8 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
     else:
         await channel.send(content=member.mention, embed=embed, view=TicketControlView())
 
-    # ✅ 차단 타입일 경우 추가 임베드/뷰
-    if ticket_type == "차단" and block_data:
+    # ✅ 차단/타임아웃 타입일 경우 추가 임베드
+    if ticket_type in ["차단", "타임아웃"] and block_data:
         reason_list = []
         for b in block_data:
             gid = int(b["guild_id"])
@@ -328,13 +329,18 @@ async def create_ticket(member: discord.Member, ticket_type: str, block_data: li
                 f"(사유:{b['reason']}, 차단자:{blocked_by})"
             )
 
-        msg = "🚫 차단된 사용자로 확인되었습니다.\n\n"
-        msg += "**차단 내역:**\n" + "\n".join(reason_list)
-        msg += "\n\n관리자와 소통하여 이의 제기를 진행해주세요."
-
-        await channel.send(
-            content=f"{member.mention}\n{msg}",
-            view=BlockTicketView(block_data)  # ✅ 기존 unblock 로직 그대로 사용
-        )
+        if ticket_type == "차단":
+            msg = "🚫 차단된 사용자로 확인되었습니다.\n\n"
+            msg += "**차단 내역:**\n" + "\n".join(reason_list)
+            msg += "\n\n관리자와 소통하여 이의 제기를 진행해주세요."
+            await channel.send(
+                content=f"{member.mention}\n{msg}",
+                view=BlockTicketView(block_data)  # ✅ 기존 unblock 로직 그대로 사용
+            )
+        else:
+            msg = "⏳ 타임아웃 제재 중입니다.\n\n"
+            msg += "**제재 내역:**\n" + "\n".join(reason_list)
+            msg += "\n\n타임아웃 해제 시간 이후 안내에 따라 해제를 진행해주세요."
+            await channel.send(content=f"{member.mention}\n{msg}")
 
     return channel

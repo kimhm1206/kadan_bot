@@ -24,6 +24,7 @@ def build_admin_embed(guild_id: int, extra_text: str = None) -> discord.Embed:
         ("문의 채널 카테고리", "ticket_category"),        # ✅ 추가
         ("차단 로그 채널", "blocked_channel"),        # ✅ 추가
         ("본계정 인증 제한 레벨", "main_auth_min_level"), # ✅ 추가
+        ("타임아웃 채널", "timeout_channel"),
     ]
 
     for label, key in items:

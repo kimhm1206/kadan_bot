@@ -112,6 +112,21 @@ def approve_guild(guild_id: int, admin_id: int):
                 deleted_at TIMESTAMP,
                 retain_until TIMESTAMP
             )
+            """,
+            f"""
+            CREATE TABLE IF NOT EXISTS timeouts_{guild_id} (
+                id SERIAL PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                discord_id BIGINT NOT NULL,
+                stove_member_no VARCHAR,
+                nickname VARCHAR,
+                reason VARCHAR NOT NULL,
+                timeout_start_at TIMESTAMP NOT NULL,
+                timeout_end_at TIMESTAMP NOT NULL,
+                created_by BIGINT NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                released_at TIMESTAMP
+            )
             """
         ]
 
@@ -218,6 +233,162 @@ def set_setting(guild_id: int, key: str, value: str, changed_by: int, reason: st
     if guild_id not in settings_cache:
         settings_cache[guild_id] = {}
     settings_cache[guild_id][key] = value
+
+def ensure_timeout_table(cur, guild_id: int):
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS timeouts_{guild_id} (
+            id SERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL,
+            discord_id BIGINT NOT NULL,
+            stove_member_no VARCHAR,
+            nickname VARCHAR,
+            reason VARCHAR NOT NULL,
+            timeout_start_at TIMESTAMP NOT NULL,
+            timeout_end_at TIMESTAMP NOT NULL,
+            created_by BIGINT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            released_at TIMESTAMP
+        )
+        """
+    )
+
+def get_timeout_reason_count(guild_id: int, discord_id: int, reason: str) -> int:
+    with get_conn() as conn, conn.cursor() as cur:
+        ensure_timeout_table(cur, guild_id)
+        cur.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM timeouts_{guild_id}
+            WHERE discord_id = %s AND reason = %s
+            """,
+            (discord_id, reason),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return int(row[0]) if row else 0
+
+def add_timeout_record(
+    guild_id: int,
+    discord_id: int,
+    stove_member_no: str | None,
+    nickname: str | None,
+    reason: str,
+    timeout_days: int,
+    created_by: int,
+) -> tuple[datetime, datetime]:
+    now = datetime.utcnow() + timedelta(hours=9)
+    end_at = now + timedelta(days=timeout_days)
+    with get_conn() as conn, conn.cursor() as cur:
+        ensure_timeout_table(cur, guild_id)
+        cur.execute(
+            f"""
+            INSERT INTO timeouts_{guild_id}
+            (guild_id, discord_id, stove_member_no, nickname, reason, timeout_start_at, timeout_end_at, created_by, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (guild_id, discord_id, stove_member_no, nickname, reason, now, end_at, created_by, now),
+        )
+        conn.commit()
+    return now, end_at
+
+def get_timeout_state(guild_id: int, discord_id: int) -> tuple[str, dict | None]:
+    """
+    상태:
+    - active: 아직 해제 시각 전
+    - releasable: 해제 시각이 지났고 아직 released_at 미기록
+    - none: 타임아웃 기록 없음
+    """
+    now = datetime.utcnow() + timedelta(hours=9)
+    with get_conn() as conn, conn.cursor() as cur:
+        ensure_timeout_table(cur, guild_id)
+        cur.execute(
+            f"""
+            SELECT id, reason, timeout_start_at, timeout_end_at
+            FROM timeouts_{guild_id}
+            WHERE discord_id = %s
+              AND released_at IS NULL
+            ORDER BY timeout_end_at DESC
+            LIMIT 1
+            """,
+            (discord_id,),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        return "none", None
+
+    data = {
+        "id": row[0],
+        "reason": row[1],
+        "timeout_start_at": row[2],
+        "timeout_end_at": row[3],
+    }
+    if now < row[3]:
+        return "active", data
+    return "releasable", data
+
+def mark_timeout_released(guild_id: int, timeout_id: int):
+    now = datetime.utcnow() + timedelta(hours=9)
+    with get_conn() as conn, conn.cursor() as cur:
+        ensure_timeout_table(cur, guild_id)
+        cur.execute(
+            f"UPDATE timeouts_{guild_id} SET released_at = %s WHERE id = %s AND released_at IS NULL",
+            (now, timeout_id),
+        )
+        conn.commit()
+
+def get_user_timeout_summary(guild_id: int, discord_id: int, reasons: list[str]) -> dict[str, int]:
+    if not reasons:
+        return {}
+
+    result = {r: 0 for r in reasons}
+    placeholders = ", ".join(["%s"] * len(reasons))
+    with get_conn() as conn, conn.cursor() as cur:
+        ensure_timeout_table(cur, guild_id)
+        cur.execute(
+            f"""
+            SELECT reason, COUNT(*)
+            FROM timeouts_{guild_id}
+            WHERE discord_id = %s AND reason IN ({placeholders})
+            GROUP BY reason
+            """,
+            (discord_id, *reasons),
+        )
+        for reason, cnt in cur.fetchall():
+            result[reason] = int(cnt)
+        conn.commit()
+    return result
+
+def get_active_timeout_for_auth(guild_id: int, discord_id: int) -> dict | None:
+    now = datetime.utcnow() + timedelta(hours=9)
+    with get_conn() as conn, conn.cursor() as cur:
+        ensure_timeout_table(cur, guild_id)
+        cur.execute(
+            f"""
+            SELECT id, reason, timeout_start_at, timeout_end_at, created_by
+            FROM timeouts_{guild_id}
+            WHERE discord_id = %s
+              AND released_at IS NULL
+              AND timeout_end_at > %s
+            ORDER BY timeout_end_at DESC
+            LIMIT 1
+            """,
+            (discord_id, now),
+        )
+        row = cur.fetchone()
+        conn.commit()
+
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "reason": row[1],
+        "timeout_start_at": row[2],
+        "timeout_end_at": row[3],
+        "created_by": row[4],
+    }
 
 def block_user(
     guild_id: int,

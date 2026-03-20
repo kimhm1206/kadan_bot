@@ -10,7 +10,7 @@ import aiohttp
 from pathlib import Path
 import os
 from urllib.parse import unquote
-from utils.function import get_setting_cached, is_main_registered  # ✅ 서버 설정 캐시에서 불러오기
+from utils.function import get_setting_cached, is_main_registered, get_active_timeout_for_auth  # ✅ 서버 설정 캐시에서 불러오기
 from .auth_embed import build_rep_change_embed
 from utils.function import is_account_duplicate, get_user_blocked,is_memberno_duplicate
 
@@ -190,7 +190,12 @@ async def verify_conditions(auth_type, guild_id, discord_id, member_no, characte
         if not ilvls or max(ilvls) < min_ilvl:
             return False, ("ilevel", min_ilvl)
 
-    # 3️⃣ 차단 검사 (공통)
+    # 3️⃣ 타임아웃 검사 (공통)
+    timeout_data = get_active_timeout_for_auth(guild_id, discord_id)
+    if timeout_data:
+        return False, ("timeout", timeout_data)
+
+    # 4️⃣ 차단 검사 (공통)
     blocked = get_user_blocked(guild_id, discord_id, member_no, nickname_list)
     if blocked:
         return False, (
@@ -225,6 +230,17 @@ def format_fail_message(reason: str, details) -> str:
             for b in blocked_details
         ]
         return "🚫 차단된 사용자입니다.\n" + "\n".join(reason_list) + "\n관리자에게 문의해주세요."
+
+    elif reason == "timeout":
+        timeout_end = details.get("timeout_end_at") if isinstance(details, dict) else None
+        if timeout_end:
+            end_text = timeout_end.strftime("%Y-%m-%d %H:%M(KST)")
+            return (
+                "⏳ 현재 타임아웃 제재 중입니다.\n"
+                f"해제 가능 시각: {end_text}\n"
+                "타임아웃 채널에서 해제 버튼을 이용해주세요."
+            )
+        return "⏳ 현재 타임아웃 제재 중입니다. 타임아웃 채널에서 해제를 진행해주세요."
 
     elif reason == "main_required":
         return "❌ 먼저 본계정 인증을 완료해 주세요."

@@ -14,6 +14,7 @@ from utils.function import (
     get_setting_cached,
     get_conn,
     get_timeout_reason_count,
+    get_timeout_state,
 )
 
 
@@ -53,6 +54,15 @@ async def purge_user_messages(guild: Optional[discord.Guild], target_id: int) ->
     return touched_channels, deleted_count
 
 def setup(bot: discord.Bot):
+    timeout_followup_ids = [
+        256425208800477184,
+        315108136669413379,
+        345235195747762178,
+        576441660045524993,
+        794908049730174976,
+        1023261980284440637,
+    ]
+
     timeout_policy = {
         "판매 채널 구매글 작성": {
             "timeout_1_2": 1,
@@ -430,6 +440,65 @@ def setup(bot: discord.Bot):
             ),
             ephemeral=True,
         )
+
+    @bot.slash_command(
+        name="타임아웃후처리",
+        description="지정된 유저들에게 타임아웃 해제 안내 DM을 일괄 발송합니다",
+        default_member_permissions=discord.Permissions(administrator=True),
+    )
+    async def timeout_followup_notify(ctx: discord.ApplicationContext):
+        await ctx.defer(ephemeral=True)
+
+        timeout_channel_id = get_setting_cached(ctx.guild_id, "timeout_channel")
+        timeout_channel_mention = (
+            f"<#{timeout_channel_id}>"
+            if timeout_channel_id and str(timeout_channel_id).isdigit()
+            else "타임아웃 채널"
+        )
+
+        sent = []
+        skipped = []
+
+        for discord_id in timeout_followup_ids:
+            user = bot.get_user(discord_id)
+            if not user:
+                try:
+                    user = await bot.fetch_user(discord_id)
+                except (discord.NotFound, discord.HTTPException):
+                    skipped.append((discord_id, "유저 조회 실패"))
+                    continue
+
+            state, data = get_timeout_state(ctx.guild_id, discord_id)
+            end_text = "확인 불가"
+            if data and data.get("timeout_end_at"):
+                end_text = data["timeout_end_at"].strftime("%Y-%m-%d %H:%M(KST)")
+
+            try:
+                await user.send(
+                    "📢 타임아웃 후처리 안내입니다.\n\n"
+                    f"해제 가능 시각이 지나면 {timeout_channel_mention} 에서 "
+                    "`타임아웃 해제하기` 버튼을 눌러 해제해 주세요.\n"
+                    f"현재 확인된 해제 가능 시각: {end_text}\n"
+                    f"(현재 상태: {state})"
+                )
+                sent.append(discord_id)
+            except discord.Forbidden:
+                skipped.append((discord_id, "DM 차단"))
+            except discord.HTTPException:
+                skipped.append((discord_id, "DM 전송 실패"))
+
+        lines = [
+            "✅ 타임아웃 후처리 DM 발송 완료",
+            f"- 성공: {len(sent)}명",
+            f"- 실패/스킵: {len(skipped)}명",
+        ]
+        if sent:
+            lines.append(f"- 성공 ID: {sent}")
+        if skipped:
+            details = ", ".join([f"{did}({reason})" for did, reason in skipped])
+            lines.append(f"- 실패 상세: {details}")
+
+        await ctx.followup.send("\n".join(lines), ephemeral=True)
 
     @bot.slash_command(
         name="차단닉네임",

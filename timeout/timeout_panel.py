@@ -1,6 +1,7 @@
 import discord
 
 from utils.function import (
+    get_main_account_nickname,
     get_setting_cached,
     get_timeout_state,
     get_user_timeout_summary,
@@ -65,15 +66,30 @@ class TimeoutPanelView(discord.ui.View):
 
         role_id = get_setting_cached(guild.id, "main_auth_role")
         role = guild.get_role(int(role_id)) if role_id and role_id.isdigit() else None
-        if role and isinstance(interaction.user, discord.Member):
+        if isinstance(interaction.user, discord.Member):
+            member = interaction.user
+        else:
+            member = guild.get_member(interaction.user.id)
+
+        if role and member:
             try:
-                await interaction.user.add_roles(role, reason="타임아웃 기간 만료 자동 해제")
+                await member.add_roles(role, reason="타임아웃 기간 만료 자동 해제")
             except discord.Forbidden:
                 await interaction.response.send_message(
                     "⚠️ 역할 부여 권한이 없어 해제를 완료하지 못했습니다. 관리자에게 문의해주세요.",
                     ephemeral=True,
                 )
                 return
+
+        # 닉네임 복구 (본계정 인증 닉네임이 있을 때)
+        if member:
+            restored_nickname = get_main_account_nickname(guild.id, interaction.user.id)
+            if restored_nickname:
+                try:
+                    await member.edit(nick=restored_nickname, reason="타임아웃 해제 닉네임 복구")
+                except discord.Forbidden:
+                    # 권한 부족 시 닉 복구만 실패하고 나머지는 진행
+                    pass
 
         mark_timeout_released(guild.id, int(data["id"]))
 

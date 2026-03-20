@@ -27,18 +27,56 @@ TARGET_DISCORD_IDS = [
 ]
 
 
-def is_still_blocked(cur, guild_id: int, discord_id: int) -> bool:
+def _get_identity_values(cur, guild_id: int, discord_id: int) -> tuple[set[str], set[str]]:
     cur.execute(
-        """
+        f"""
+        SELECT stove_member_no, nickname FROM auth_accounts_{guild_id} WHERE discord_user_id = %s
+        UNION ALL
+        SELECT stove_member_no, nickname FROM deleted_auth_accounts_{guild_id} WHERE discord_user_id = %s
+        UNION ALL
+        SELECT stove_member_no, nickname FROM auth_sub_accounts_{guild_id} WHERE discord_user_id = %s
+        UNION ALL
+        SELECT stove_member_no, nickname FROM deleted_auth_sub_accounts_{guild_id} WHERE discord_user_id = %s
+        """,
+        (discord_id, discord_id, discord_id, discord_id),
+    )
+    member_nos: set[str] = set()
+    nicknames: set[str] = set()
+    for member_no, nickname in cur.fetchall():
+        if member_no:
+            member_nos.add(str(member_no))
+        if nickname:
+            nicknames.add(str(nickname))
+    return member_nos, nicknames
+
+
+def is_still_blocked(cur, guild_id: int, discord_id: int) -> bool:
+    member_nos, nicknames = _get_identity_values(cur, guild_id, discord_id)
+
+    conditions = ["(data_type = 'discord_id' AND value = %s)"]
+    params: list[str | int] = [str(discord_id)]
+
+    if member_nos:
+        placeholders = ", ".join(["%s"] * len(member_nos))
+        conditions.append(f"(data_type = 'memberNo' AND value IN ({placeholders}))")
+        params.extend(member_nos)
+
+    if nicknames:
+        placeholders = ", ".join(["%s"] * len(nicknames))
+        conditions.append(f"(data_type = 'nickname' AND value IN ({placeholders}))")
+        params.extend(nicknames)
+
+    where_cond = " OR ".join(conditions)
+    cur.execute(
+        f"""
         SELECT 1
         FROM blocked_users
         WHERE guild_id = %s
-          AND data_type = 'discord_id'
-          AND value = %s
           AND unblocked_at IS NULL
+          AND ({where_cond})
         LIMIT 1
         """,
-        (guild_id, str(discord_id)),
+        (guild_id, *params),
     )
     return cur.fetchone() is not None
 
@@ -168,11 +206,14 @@ def main():
     args = parser.parse_args()
 
     restored_ids: list[int] = []
+    skipped_unblocked: list[int] = []
+    skipped_no_source: list[int] = []
 
     with get_conn() as conn, conn.cursor() as cur:
         for discord_id in TARGET_DISCORD_IDS:
             if not is_still_blocked(cur, args.guild_id, discord_id):
                 # 차단 해제된 유저는 작업하지 않음
+                skipped_unblocked.append(discord_id)
                 continue
 
             main_restored = restore_main(cur, args.guild_id, discord_id, args.dry_run)
@@ -180,6 +221,8 @@ def main():
 
             if main_restored or sub_restored:
                 restored_ids.append(discord_id)
+            else:
+                skipped_no_source.append(discord_id)
 
         if args.dry_run:
             conn.rollback()
@@ -190,6 +233,15 @@ def main():
 
     print("\n[RESTORED_DISCORD_IDS]")
     print(restored_ids)
+    print(f"count={len(restored_ids)}")
+
+    print("\n[SKIPPED_UNBLOCKED_IDS]")
+    print(skipped_unblocked)
+    print(f"count={len(skipped_unblocked)}")
+
+    print("\n[SKIPPED_NO_SOURCE_OR_ALREADY_RESTORED_IDS]")
+    print(skipped_no_source)
+    print(f"count={len(skipped_no_source)}")
 
 
 if __name__ == "__main__":

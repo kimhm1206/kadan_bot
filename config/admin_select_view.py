@@ -20,6 +20,7 @@ class AdminConfigSelectView(discord.ui.View):
                 discord.SelectOption(label="문의 채널 카테고리", value="ticket_category"),       # ✅ 추가
                 discord.SelectOption(label="차단 로그 채널", value="blocked_channel"),
                 discord.SelectOption(label="본계정 인증 제한 레벨", value="main_auth_min_level"), # ✅ 추가
+                discord.SelectOption(label="타임아웃 채널", value="timeout_channel"),
             ]
         )
 
@@ -48,6 +49,7 @@ class AdminConfigSelectView(discord.ui.View):
             ticket_category="문의 채널 카테고리",       
             blocked_channel="차단 로그 채널",   
             main_auth_min_level="본계정 인증 제한 레벨",   
+            timeout_channel="타임아웃 채널",
         )[selected]
 
                 # ✅ target_type 구분

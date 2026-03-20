@@ -5,6 +5,7 @@ from auth.auth_view import AuthMainView
 from auth.auth_embed import build_auth_embed
 from ticket.ticket_embed import build_ticket_panel_embed
 from ticket.ticket_view import TicketPanelView
+from timeout.timeout_panel import build_timeout_embed, TimeoutPanelView
 
 
 async def send_default_message(bot: discord.Bot, guild_id: int = None,
@@ -49,6 +50,16 @@ async def send_default_message(bot: discord.Bot, guild_id: int = None,
                         build_ticket_panel_embed(g.id),
                         TicketPanelView()
                     )
+
+            timeout_channel_id = settings.get("timeout_channel")
+            if timeout_channel_id and timeout_channel_id.isdigit():
+                timeout_channel = g.get_channel(int(timeout_channel_id))
+                if timeout_channel:
+                    await _replace_message(
+                        timeout_channel,
+                        build_timeout_embed(),
+                        TimeoutPanelView()
+                    )
         return
 
     # 2️⃣ 설정 변경 시: 특정 타입만 갱신 (admin_channel 제외)
@@ -67,6 +78,11 @@ async def send_default_message(bot: discord.Bot, guild_id: int = None,
                 embed=build_ticket_panel_embed(new_channel.guild.name),
                 view=TicketPanelView()
             )
+    elif type == "timeout_channel":
+        if old_channel:
+            await _delete_bot_messages(old_channel)
+        if new_channel:
+            await new_channel.send(embed=build_timeout_embed(), view=TimeoutPanelView())
 
 
 async def _delete_bot_messages(channel: discord.TextChannel):

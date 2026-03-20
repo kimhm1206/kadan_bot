@@ -71,7 +71,7 @@ class ChannelSettingEditModal(discord.ui.Modal):
 
         else:
             # ✅ 인증/티켓 등 다른 채널 설정 변경
-            if self.setting_type in ["verify_channel", "ticket_channel"]:
+            if self.setting_type in ["verify_channel", "ticket_channel", "timeout_channel"]:
                 old_channel = None
                 if old_channel_id and old_channel_id.isdigit():
                     try:

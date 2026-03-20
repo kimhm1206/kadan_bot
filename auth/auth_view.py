@@ -224,6 +224,33 @@ class RepChangeConfirmView(discord.ui.View):
 
         if not ok:
             reason, details = result
+            if reason == "timeout":
+                timeout_end = details.get("timeout_end_at") if isinstance(details, dict) else None
+                timeout_end_text = timeout_end.strftime("%Y-%m-%d %H:%M(KST)") if timeout_end else "확인 불가"
+
+                timeout_data = [
+                    {
+                        "guild_id": interaction.guild_id,
+                        "data_type": "timeout",
+                        "value": str(interaction.user.id),
+                        "reason": f"타임아웃 제재 중 (해제 가능 시각: {timeout_end_text})",
+                        "blocked_by": details.get("created_by") if isinstance(details, dict) else None,
+                    }
+                ]
+                await create_ticket(interaction.user, "타임아웃", block_data=timeout_data)
+
+                embed = discord.Embed(
+                    title="⏳ 타임아웃 제재 중",
+                    description=(
+                        "현재 타임아웃 제재 기간 중이라 인증을 진행할 수 없습니다.\n\n"
+                        "생성된 채널에서 관리자 안내를 받거나, 타임아웃 채널에서 해제를 진행해 주세요."
+                    ),
+                    color=discord.Color.orange()
+                )
+
+                await interaction.response.edit_message(content=None, embed=embed, view=None, delete_after=10)
+                return
+
             if reason == "blocked":
                 # ✅ 차단된 경우 → 재차 차단 등록 후 티켓 채널 생성
                 from utils.function import block_user, get_user_blocked, get_conn
@@ -233,6 +260,11 @@ class RepChangeConfirmView(discord.ui.View):
                 nickname_list = [c["CharacterName"] for c in self.characters]
                 original_details = details.get("details") if isinstance(details, dict) else details
                 block_details = original_details
+                related_block_id = "unknown"
+                if original_details:
+                    existing_ids = [str(item.get("id")) for item in original_details if item.get("id")]
+                    if existing_ids:
+                        related_block_id = existing_ids[0]
                 bot_user_id = interaction.client.user.id if interaction.client.user else interaction.user.id
                 member_no_value = str(self.member_no) if self.member_no else ""
 
@@ -268,7 +300,7 @@ class RepChangeConfirmView(discord.ui.View):
                                     row_id = row[0]
                                     cur.execute(
                                         "UPDATE blocked_users SET reason = %s WHERE id = %s",
-                                        (f"{auto_reason} | 자동차단={row_id}", row_id),
+                                        (f"{auto_reason} | 연관차단={related_block_id}", row_id),
                                     )
                             conn.commit()
 

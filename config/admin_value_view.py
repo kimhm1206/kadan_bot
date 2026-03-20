@@ -135,8 +135,8 @@ class AdminConfigValueView(discord.ui.View):
         if old_value is None:
             set_setting(self.guild_id, self.setting_type, str(target.id), interaction.user.id, reason="create")
 
-            # ✅ 기본 메시지 전송은 인증/티켓 채널만
-            if self.setting_type in ["verify_channel", "ticket_channel"]:
+            # ✅ 기본 메시지 전송 (인증/티켓/타임아웃 채널)
+            if self.setting_type in ["verify_channel", "ticket_channel", "timeout_channel"]:
                 new_channel = interaction.guild.get_channel(target.id)
                 await send_default_message(
                     self.bot,
